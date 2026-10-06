@@ -9,10 +9,13 @@ import { buildPlanBundle } from '../lib/plan-share.js'
 import { applyProgram, undoProgram } from '../lib/trainer.js'
 import { IN_TELEGRAM, telegramHaptic } from '../lib/telegram.js'
 import Icon from '../components/Icon.jsx'
+import '../team.css'
 import { Button, Section, Row, Check, Switch, TextField, TextArea } from '../components/ui.jsx'
 
 // Trainers and their clients. Like the admin dashboard this screen is English-only: it is not
 // part of the translated end-user surface, so it stays out of the per-language string packs.
+
+const initial = n => (String(n || '?').trim()[0] || '?').toUpperCase()
 
 const rel = ts => {
   if (!ts) return 'never'
@@ -72,15 +75,15 @@ function MyTrainer() {
 
   const pending = items.filter(i => i.status === 'pending')
   return <>
-    <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts, body weight and routines, and can send you programs. Nothing changes in your plan until you accept one.' : 'Got a code or a link from your trainer? Opening their link joins you automatically.'}>
+    {(mine || user?.role !== 'trainer') && <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts, body weight and routines, and can send you programs. Nothing changes in your plan until you accept one.' : 'Got a code or a link from your trainer? Opening their link joins you automatically.'}>
       {mine ? <>
-        <Row icon="person" title={mine.name} />
+        <div className="tm-client"><span className="tm-ava">{initial(mine.name)}</span><div><div className="nm">{mine.name}</div><div className="sb">Your trainer</div></div></div>
         <Row icon="reset" title="Leave this trainer" onClick={leave} danger />
       </> : mine === null ? <div style={{ padding: 12 }}>
         <TextField value={code} placeholder="Trainer code" autoCapitalize="none" onChange={e => setCode(e.target.value)} />
         <div style={{ height: 8 }} /><Button variant="primary" onClick={join} disabled={code.trim().length < 6}>Join</Button>
       </div> : null}
-    </Section>
+    </Section>}
 
     {pending.length > 0 && <Section title="New programs">
       {pending.map(i => <div key={i.id} style={{ padding: 12 }}>
@@ -129,19 +132,26 @@ function Clients() {
   return <>
     <Section title="Your clients">
       {list === null ? <div className="muted small" style={{ padding: 12 }}>Loading…</div>
-        : !list.length ? <div className="muted small" style={{ padding: 12 }}>No clients yet. Send them your invite link below.</div>
-        : list.map(c => <Row key={c.id} icon="person" title={c.name} accessory="chevron" onClick={() => nav('/team/c/' + c.id)}
-          subtitle={c.workouts + ' workouts' + (c.lastWorkout ? ' · last ' + fmtDate(c.lastWorkout) : '') + (c.pending ? ' · ' + c.pending + ' program waiting' : '')} />)}
+        : !list.length ? <div className="tm-empty">No clients yet. Send them your invite link below.</div>
+        : list.map(c => <button key={c.id} className="tm-client" onClick={() => nav('/team/c/' + c.id)}>
+          <span className="tm-ava">{initial(c.name)}</span>
+          <span style={{ minWidth: 0 }}>
+            <div className="nm">{c.name}</div>
+            <div className="sb">{c.workouts + ' workouts' + (c.lastWorkout ? ' · last ' + fmtDate(c.lastWorkout) : '')}</div>
+          </span>
+          {c.pending > 0 && <span className="tm-badge">{c.pending} sent</span>}
+          <Icon name="chevronRight" className="lrow-c" />
+        </button>)}
     </Section>
     <Section title="Invite a client" footer="Anyone who opens this link joins you. A new link stops the old one from working; people already with you stay.">
-      {inv ? <div style={{ padding: 12 }}>
-        <div className="small" style={{ wordBreak: 'break-all', marginBottom: 8 }}>{link}</div>
-        <div className="row" style={{ gap: 8 }}>
-          {inv.link && <Button variant="primary" onClick={share}>Share in Telegram</Button>}
-          <Button onClick={copy}>Copy</Button>
-          <Button onClick={reset}>New link</Button>
+      {inv ? <div className="tm-invite">
+        <div className="tm-link">{link}</div>
+        {inv.link && <Button variant="primary" icon="plus" onClick={share}>Share in Telegram</Button>}
+        <div className="tm-actions">
+          <Button size="sm" onClick={copy}>Copy</Button>
+          <Button size="sm" onClick={reset}>New link</Button>
         </div>
-      </div> : <div className="muted small" style={{ padding: 12 }}>Loading…</div>}
+      </div> : <div className="tm-empty">Loading…</div>}
     </Section>
   </>
 }
@@ -172,9 +182,19 @@ export function TeamClient() {
   }
   const lastBW = d.bodyweight[d.bodyweight.length - 1]
   return <>
-    <Header title={d.client.name} sub={'last sync ' + rel(d.lastSync)} back="/team" />
+    <Header title="Client" back="/team" />
+    <div className="tm-who">
+      <span className="tm-ava lg">{initial(d.client.name)}</span>
+      <div><div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 24, letterSpacing: '-.03em' }}>{d.client.name}</div>
+        <div className="muted small">{d.lastSync ? 'active ' + rel(d.lastSync) : 'joined ' + (d.client.joined ? fmtDate(d.client.joined.slice(0, 10)) : '')}</div></div>
+    </div>
+    <div className="tm-stats">
+      <div className="tm-stat"><b>{d.workouts.length}</b><span>Workouts</span></div>
+      <div className="tm-stat"><b>{d.workouts[0] ? fmtDate(d.workouts[0].d) : '—'}</b><span>Last trained</span></div>
+      <div className="tm-stat"><b>{lastBW ? lastBW.w : '—'}</b><span>{'Body ' + d.unit}</span></div>
+    </div>
     <Section title="Send a program" footer={(S.routines || []).length ? 'Pick routines from your own plan. Build them in the Plan tab first.' : 'You have no routines yet — build them in the Plan tab, then send them here.'}>
-      {(S.routines || []).map(r => <Row key={r.id} title={(r.emoji || '') + ' ' + r.name} subtitle={(r.ex || []).length + ' exercises'} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
+      {(S.routines || []).map(r => <Row key={r.id} title={<>{r.emoji && <span className="tm-emoji">{r.emoji}</span>}{r.name}</>} subtitle={(r.ex || []).length + ' exercises'} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
         <Check checked={!!pick[r.id]} onChange={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))} />
       </Row>)}
       {chosen.length > 0 && <div style={{ padding: 12 }}>
@@ -188,10 +208,8 @@ export function TeamClient() {
     {d.assignments.length > 0 && <Section title="Sent">
       {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Program'} subtitle={a.routines + ' routines · ' + rel(a.created)} value={a.status} />)}
     </Section>}
-    <Section title="Overview">
-      <Row title="Workouts" value={d.workouts.length} />
-      {lastBW && <Row title="Body weight" value={lastBW.w + ' ' + d.unit} subtitle={fmtDate(lastBW.d)} />}
-      <Row title="Their routines" value={d.routines.map(r => r.name).join(', ') || '—'} />
+    <Section title="Their routines">
+      {d.routines.length ? d.routines.map(r => <Row key={r.id} title={r.name} value={r.count + ' ex'} />) : <div className="tm-empty">No routines yet.</div>}
     </Section>
     <Section title="Recent workouts">
       {d.workouts.slice(0, 20).map(w => <Row key={w.id || w.d + w.name} title={w.name || 'Workout'}

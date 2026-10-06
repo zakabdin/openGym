@@ -24,6 +24,16 @@ let remoteBase = ''
 let remoteToken = null
 export function setRemoteAuth(base, token) { remoteBase = base || ''; remoteToken = token || null }
 
+// A sign-in that is still in flight (the Telegram Mini App's initData exchange, lib/telegram.js).
+// Every other request waits for it, so a screen that mounts before boot has the token — one shown
+// from the cached profile — does not ask first and get a 401. It never rejects: a failed sign-in
+// lets the waiting requests go, and they meet the 401 themselves.
+let gate = null
+export function gateRequests(promise) {
+  const done = promise.then(() => {}, () => {}).then(() => { if (gate === done) gate = null })
+  gate = done
+}
+
 export { appBase }
 
 // How long one request may take before it counts as no answer at all. A black-holed connection
@@ -45,6 +55,7 @@ export async function api(path, opts) {
   // there and the change was marked as synced while the server never saw it. status 0, not
   // undefined: this is not "offline", and the store must not show it as such.
   if (MOBILE && !remoteBase) throw failure(t('This phone is not connected to a server.'), 'not-paired', 0)
+  if (gate && path !== '/api/auth/telegram') await gate
   const headers = Object.assign({ 'Content-Type': 'application/json' }, init.headers)
   if (remoteToken) headers.Authorization = 'Bearer ' + remoteToken
   // A paired phone has an absolute base of its own; everyone else is relative to where the app

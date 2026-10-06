@@ -1,7 +1,7 @@
 // Running inside a Telegram Mini App. telegram-web-app.js (index.html) fills window.Telegram
 // before the app starts; outside Telegram it is absent and everything here is a no-op, so the
 // ordinary web and phone builds never notice it.
-import { api, setRemoteAuth } from './api.js'
+import { api, setRemoteAuth, gateRequests } from './api.js'
 
 const wa = () => window.Telegram?.WebApp
 // initData is empty when the script loaded in an ordinary browser, which is the signal.
@@ -20,12 +20,22 @@ export function initTelegram() {
 
 // Signs in with initData and installs the Bearer token for every later request. The token is not
 // kept: Telegram signs fresh initData on each launch, and a stored one would only outlive it.
-export async function telegramSession() {
-  const r = await api('/api/auth/telegram', { method: 'POST', body: JSON.stringify({ initData: wa().initData }) })
-  if (!r.token || !r.user?.id) throw Object.assign(new Error('bad sign-in answer'), { status: 200, code: 'bad-response' })
-  setRemoteAuth('', r.token)
-  return { user: r.user }
+let session = null
+function signIn() {
+  const p = api('/api/auth/telegram', { method: 'POST', body: JSON.stringify({ initData: wa().initData }) }).then(r => {
+    if (!r.token || !r.user?.id) throw Object.assign(new Error('bad sign-in answer'), { status: 200, code: 'bad-response' })
+    setRemoteAuth('', r.token)
+    return { user: r.user }
+  })
+  session = p
+  p.catch(() => { if (session === p) session = null })   // a failed one is asked again, not remembered
+  gateRequests(p)
+  return p
 }
+// Started as the module loads, before any screen can mount: a screen shown from the cached profile
+// would otherwise call the API ahead of boot() and meet a 401 (api.js holds those requests back).
+if (IN_TELEGRAM) signIn().catch(() => {})
+export const telegramSession = () => session || signIn()
 
 // Telegram's own back arrow in the header, so the app has one back control, not two.
 export function bindTelegramBack(show, onBack) {
