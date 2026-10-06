@@ -60,7 +60,7 @@
   --shadow-lift: 0 18px 36px -16px rgba(60,30,20,.28);
 }
 
-/* ember: the default for a new profile. Ink is near-black on the dark theme's bright
+/* ember: the signature accent. Ink is near-black on the dark theme's bright
    gradient (white on #ff7a45 is 2.7:1, under the 3:1 a 17px/600 label needs) and white
    on the deeper light-theme orange (3.8:1). */
 :root[data-accent="ember"] {

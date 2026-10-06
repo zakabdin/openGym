@@ -57,7 +57,7 @@ const resolveTheme = theme => theme === 'light' || theme === 'dark'
 function applyPrefs(theme, accent) {
   const de = document.documentElement
   de.dataset.theme = resolveTheme(theme)
-  de.dataset.accent = ACCENTS[accent] ? accent : 'ember'
+  de.dataset.accent = ACCENTS[accent] ? accent : 'teal'
   const meta = document.querySelector('meta[name="theme-color"]')
   if (meta) meta.content = de.dataset.theme === 'light' ? '#f6f2ef' : '#0b0a0e'
   setTelegramChrome(de.dataset.theme === 'light' ? '#f6f2ef' : '#0b0a0e')
