@@ -1003,6 +1003,7 @@ export const PT_BR_OVERRIDES = {
   'Blue': 'Azul',
   'Orange': 'Laranja',
   'Purple': 'Roxo',
+  'Ember': 'Brasa',
   'Pink': 'Rosa',
   'Red': 'Vermelho',
   'Teal': 'Turquesa',

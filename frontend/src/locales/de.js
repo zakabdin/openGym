@@ -1678,6 +1678,7 @@ export default {
   'Blue': 'Blau',
   'Orange': 'Orange',
   'Purple': 'Lila',
+  'Ember': 'Glut',
   'Pink': 'Pink',
   'Red': 'Rot',
   'Teal': 'Türkis',

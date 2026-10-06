@@ -1669,6 +1669,7 @@ export default {
   'Blue': 'น้ำเงิน',
   'Orange': 'ส้ม',
   'Purple': 'ม่วง',
+  'Ember': 'ถ่านไฟ',
   'Pink': 'ชมพู',
   'Red': 'แดง',
   'Teal': 'เขียวน้ำทะเล',

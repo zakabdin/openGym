@@ -1,0 +1,149 @@
+/* ============================================================================
+   Forge — the look of this fork, as one layer over index.css.
+   ----------------------------------------------------------------------------
+   index.css stays the structure and the token names; everything here is a value
+   or a finishing touch, so the two can be diffed and merged with upstream
+   without untangling.
+
+   - WARM GRAPHITE, NOT iOS GREY. A violet-tinged near-black (dark) and warm paper
+     (light) instead of pure black and cool grey.
+   - ONE SIGNATURE ACCENT, EMBER: orange into hot pink. The other accents keep
+     working; each gets a gradient made from itself.
+   - SOFTER SHAPES. Larger radii, a faint lit edge on cards, a glow under the
+     primary action.
+   - A FLOATING DOCK instead of a full-width tab bar.
+   - ROUNDED DISPLAY FACE for titles and big numbers; body text stays on the
+     system font.
+   ========================================================================== */
+
+:root {
+  --bg:        #0b0a0e;
+  --bg-el:     #141218;
+  --surface:   #17151c;
+  --surface-2: #211f28;
+  --surface-3: #2d2a35;
+
+  --label:     #f7f4fa;
+  --label-2:   rgba(238,232,247,.62);
+  --label-3:   rgba(238,232,247,.34);
+  --label-4:   rgba(238,232,247,.18);
+  --sep:       rgba(140,128,166,.26);
+  --sep-op:    rgba(140,128,166,.18);
+
+  --card-edge: rgba(255,255,255,.06);
+  --shadow-lift: 0 18px 40px -14px rgba(0,0,0,.65);
+
+  --r-sm:10px; --r:14px; --r-lg:20px; --r-xl:28px; --r-card:20px;
+  --pad:18px;
+
+  --display: ui-rounded,'SF Pro Rounded','Nunito','Segoe UI',system-ui,sans-serif;
+
+  /* Every accent gets a gradient from itself; ember overrides it below. */
+  --acc-grad: linear-gradient(145deg, color-mix(in srgb,var(--acc) 78%,#fff), var(--acc) 62%);
+  --acc-glow: color-mix(in srgb,var(--acc) 55%,transparent);
+}
+:root[data-theme="light"] {
+  --bg:        #f6f2ef;
+  --bg-el:     #fbf9f7;
+  --surface:   #ffffff;
+  --surface-2: #f0ebe7;
+  --surface-3: #e6e0db;
+
+  --label:     #1c1722;
+  --label-2:   rgba(44,32,56,.62);
+  --label-3:   rgba(44,32,56,.34);
+  --label-4:   rgba(44,32,56,.16);
+  --sep:       rgba(70,40,30,.16);
+  --sep-op:    rgba(70,40,30,.12);
+
+  --card-edge: rgba(70,40,30,.07);
+  --shadow-lift: 0 18px 36px -16px rgba(60,30,20,.28);
+}
+
+/* ember: the default for a new profile. Ink is near-black on the dark theme's bright
+   gradient (white on #ff7a45 is 2.7:1, under the 3:1 a 17px/600 label needs) and white
+   on the deeper light-theme orange (3.8:1). */
+:root[data-accent="ember"] {
+  --acc:#ff6a3d; --acc-2:#e04a1d; --on-acc:#1c0a05;
+  --acc-grad:linear-gradient(135deg,#ff8f4a,#ff4f7b);
+  --acc-glow:rgba(255,95,80,.55);
+}
+:root[data-theme="light"][data-accent="ember"] {
+  --acc:#e8531c; --acc-2:#c23f0d; --on-acc:#ffffff;
+  --acc-grad:linear-gradient(135deg,#f46a22,#e03a66);
+  --acc-glow:rgba(232,83,28,.4);
+}
+
+/* ------------------------------------------------------------ backdrop -- */
+html { background: var(--bg); }
+body { background: transparent; }
+/* A low ember glow at the top of every screen — behind the content, fixed, never scrolls. */
+body::before {
+  content:''; position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(90% 38% at 85% -6%, color-mix(in srgb,var(--acc) 17%,transparent), transparent 70%),
+    radial-gradient(70% 30% at 0% 0%, color-mix(in srgb,var(--indigo) 10%,transparent), transparent 70%);
+}
+
+/* ---------------------------------------------------------------- type -- */
+.hdr h1, .card .big, .stat-n { font-family:var(--display); font-weight:800; letter-spacing:-.03em; }
+.hdr h1 { font-size:32px; }
+.hdr .sub { letter-spacing:.005em; }
+.sect-t, h4.sec {
+  font-size:11.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase;
+  color:var(--label-3); padding:0 6px 8px;
+}
+.card h2 { font-size:11.5px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--label-3); }
+.sect-f { color:var(--label-3); }
+
+/* --------------------------------------------------------------- cards -- */
+.card, .sect-b {
+  background:linear-gradient(180deg, color-mix(in srgb,var(--surface),#fff 3.5%), var(--surface));
+  box-shadow:inset 0 0 0 1px var(--card-edge);
+}
+.card { padding:18px; margin-bottom:14px; }
+:root[data-theme="light"] .card, :root[data-theme="light"] .sect-b {
+  background:var(--surface);
+  box-shadow:inset 0 0 0 1px var(--card-edge), 0 10px 24px -18px rgba(60,30,20,.3);
+}
+.lrow-i { border-radius:10px; }
+
+/* ------------------------------------------------------------- buttons -- */
+.btn { border-radius:var(--r); font-weight:650; }
+.btn.primary {
+  background:var(--acc-grad); color:var(--on-acc);
+  box-shadow:0 12px 26px -12px var(--acc-glow), inset 0 1px 0 rgba(255,255,255,.28);
+}
+.btn.primary:active { background:var(--acc-grad); filter:brightness(.9); }
+.btn.sm, .btn.xs { box-shadow:none; }
+.chip.on { background:var(--acc-grad); }
+.iconbtn { border-radius:14px; }
+
+/* ----------------------------------------------------------- floating dock -- */
+#tabbar {
+  inset-inline-start:12px; inset-inline-end:12px; bottom:calc(10px + var(--sab));
+  padding:9px 8px 7px; border-radius:30px;
+  background:color-mix(in srgb,var(--bg-el) 80%,transparent);
+  -webkit-backdrop-filter:saturate(170%) blur(22px); backdrop-filter:saturate(170%) blur(22px);
+  border:0; box-shadow:inset 0 0 0 1px var(--card-edge), var(--shadow-lift);
+  max-width:536px; margin-inline:auto;
+}
+:root[data-theme="light"] #tabbar { background:rgba(255,255,255,.82); }
+#tabbar button.on::after {
+  content:''; width:4px; height:4px; border-radius:50%; background:var(--acc); margin-top:1px;
+}
+#tabbar button.start .cir {
+  width:56px; height:56px; background:var(--acc-grad);
+  box-shadow:0 12px 26px -8px var(--acc-glow), inset 0 1px 0 rgba(255,255,255,.3);
+}
+#tabbar button.start.rec .cir { background:var(--orange); }
+#tabbar button.start.on::after { display:none; }
+/* The dock floats, so the page needs room beneath it. */
+#app { padding-bottom:calc(112px + var(--sab)); }
+:root[data-native-kb] #app, :root[data-native-kb] body.resting #app { padding-bottom:calc(112px + var(--native-kb)); }
+body.resting #app { padding-bottom:calc(228px + var(--sab)); }
+
+/* ------------------------------------------------------- Telegram Mini App -- */
+/* Telegram draws its own header above the page; the safe-area inset it reports is already
+   applied by the WebView, so the page only needs the breathing room under it. */
+:root.tg #app { padding-top:calc(var(--sat) + var(--conn) + 12px); }

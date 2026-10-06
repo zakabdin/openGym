@@ -1658,6 +1658,7 @@ export default {
   'Blue': 'नीला',
   'Orange': 'नारंगी',
   'Purple': 'बैंगनी',
+  'Ember': 'अंगारा',
   'Pink': 'गुलाबी',
   'Red': 'लाल',
   'Teal': 'फ़िरोज़ी',

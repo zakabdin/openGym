@@ -1658,6 +1658,7 @@ export default {
   'Blue': 'Azul',
   'Orange': 'Naranja',
   'Purple': 'Morado',
+  'Ember': 'Brasa',
   'Pink': 'Rosa',
   'Red': 'Rojo',
   'Teal': 'Turquesa',

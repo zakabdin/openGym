@@ -1658,6 +1658,7 @@ export default {
   'Blue': '蓝色',
   'Orange': '橙色',
   'Purple': '紫色',
+  'Ember': '炭火',
   'Pink': '粉色',
   'Red': '红色',
   'Teal': '青色',

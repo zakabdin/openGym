@@ -37,3 +37,11 @@ export function bindTelegramBack(show, onBack) {
 }
 
 export const telegramHaptic = kind => { try { wa()?.HapticFeedback?.notificationOccurred(kind) } catch { /* optional */ } }
+
+// Paints Telegram's own header, background and bottom bar in the app's colour, so there is no
+// strip of Telegram's theme above or below the page. A client too old for these calls keeps its own.
+export function setTelegramChrome(color) {
+  const w = wa()
+  if (!IN_TELEGRAM || !w) return
+  for (const k of ['setHeaderColor', 'setBackgroundColor', 'setBottomBarColor']) { try { w[k]?.(color) } catch { /* optional */ } }
+}
