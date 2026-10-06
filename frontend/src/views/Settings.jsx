@@ -15,6 +15,7 @@ import { wakeLockSupported } from '../lib/wakelock.js'
 import { t, LANGS, INSTR_LANGS, EXERCISE_NAME_LANGS, baseLang } from '../lib/i18n.js'
 import { effectiveLang } from '../lib/default-lang.js'
 import { DEMO, REPO } from '../lib/demo.js'
+import { IN_TELEGRAM } from '../lib/telegram.js'
 import { MOBILE, isAndroid, shareExport, shareExportBlob, syncReminder } from '../lib/mobile.js'
 import { referencedFiles } from '../lib/media-refs.js'
 import { mediaStore } from '../lib/media-store.js'
@@ -44,7 +45,7 @@ export default function Settings() {
   const lang = effectiveLang(S, config)
   // This profile's passkeys and the code for another device (#95). A change to them is read back
   // here and by the password row, whose "Remove" depends on there being a passkey.
-  const passkeys = usePasskeys(!!user && !MOBILE && !DEMO)
+  const passkeys = usePasskeys(!!user && !MOBILE && !DEMO && !IN_TELEGRAM)
   const [credsV, setCredsV] = useState(0)
   const credsChanged = () => { passkeys.load(); setCredsV(v => v + 1) }
   const { update, importConflict, importBackup, setUnit, resetEverything: resetAll, setUser, pullState, pushState, resetDemo } = useStore()
@@ -278,7 +279,7 @@ export default function Settings() {
     {/* ---------- the server: which one, which account, how that stands, "Sync now" ----------
         A paired phone's Admin and Disconnect sit in the same block; a browser's account rows
         follow in their own. */}
-    {user && !DEMO && <ServerSyncSection>
+    {user && !DEMO && !IN_TELEGRAM && <ServerSyncSection>
       {MOBILE && <>
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
         <AccountIdRow id={user.id} />
@@ -299,6 +300,15 @@ export default function Settings() {
           onClick={() => confirmSheet({ title: t('Reset demo data?'), message: t('Puts the example plan, workouts and weigh-ins back the way they started.'), confirmText: t('Reset'), onConfirm: () => { resetDemo(); nav('/home'); toast(t('Demo data reset')) } })} />
         <Row icon="rocket" iconTint="var(--indigo)" title={t('Self-host openGym')} subtitle={t('Passkey sign-in, sync across your devices, your own data.')} accessory="chevron"
           onClick={() => window.open(REPO, '_blank', 'noopener')} />
+      </> : IN_TELEGRAM && user ? <>
+        {/* The Telegram account is the sign-in: no passkeys, passwords, device codes or phone
+            pairing apply here, and there is nothing to sign out of (Telegram signs in again on
+            the next launch). English-only, like the Team screen. */}
+        <Row icon="person" iconTint="var(--acc)" title="Signed in with Telegram" subtitle={user.name} />
+        <Row icon="calendar" iconTint="var(--indigo)" title={user.role === 'trainer' ? 'Clients & programs' : 'Trainer & programs'}
+          subtitle={user.role === 'trainer' ? 'Your clients and the programs you send' : user.trainerId ? 'Programs from your trainer' : 'Join a trainer, or become one'}
+          accessory="chevron" onClick={() => nav('/team')} />
+        {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
       </> : user ? <>
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
         <PasskeysRow state={passkeys.st} changed={credsChanged} />
@@ -502,7 +512,7 @@ export default function Settings() {
       </Row>
     </Section>
 
-    {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
+    {(user || MOBILE) && !IN_TELEGRAM && <NotificationsCard S={S} update={update} toast={toast} />}
 
     {/* ---------- equipment ---------- */}
     <EquipmentCard S={S} update={update} />
@@ -568,7 +578,7 @@ export default function Settings() {
       onChange={ev => { const f = ev.target.files[0]; if (f) importFromApp(f); ev.target.value = '' }} />
 
     {/* "Add to Home screen" makes no sense inside the native app */}
-    {!MOBILE && <Section title={t('Tip')}>
+    {!MOBILE && !IN_TELEGRAM && <Section title={t('Tip')}>
       <Row icon="lightbulb" iconTint="var(--yellow)"
         title={IS_ANDROID ? t('In Chrome: ⋮ menu → Add to Home screen') : t('In Safari: Share → Add to Home Screen')}
         subtitle={t('to install openGym as a full-screen app.') + ' ' + (user ? t('Your data syncs with your profile — sign in anywhere to see it.') : t('Guest data stays on this device — export a backup now and then!'))} />
@@ -578,7 +588,7 @@ export default function Settings() {
         On Android the row is always there — it checks on demand and installs when a release is
         newer (checksum verified, see onUpdateRowClick). On the web the app updates with its
         server, so the row points at the APK for the phone instead. iOS has no APK: nothing. */}
-    {(!MOBILE || android) && <Section title={t('Updates')}
+    {(!MOBILE || android) && !IN_TELEGRAM && <Section title={t('Updates')}
       footer={MOBILE ? t('Releases are checked on gitlab.com. The download is verified against its checksum before the installer opens.') : t('The web app updates together with your server. The Android app installs its own updates from here.')}>
       {MOBILE
         ? <Row icon="download" iconTint="var(--acc)"
