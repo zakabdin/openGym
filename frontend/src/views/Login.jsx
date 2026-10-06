@@ -1,3 +1,4 @@
+import { IN_TELEGRAM } from '../lib/telegram.js'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { webauthnOK, passkeyLogin, passkeyRegister, bio } from '../lib/api.js'
@@ -80,6 +81,16 @@ export default function Login() {
     <h1 style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-.028em', margin: '10px 0 4px' }}>openGym</h1>
   </>
   const wrap = { display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: '78vh', textAlign: 'center' }
+
+  // Inside Telegram the sign-in is automatic (boot, lib/telegram.js); this screen only shows when
+  // it failed — the server unreachable, the account disabled, or an invite-only instance.
+  if (IN_TELEGRAM) return (
+    <div className="narrow" style={wrap}>
+      {head}
+      <div className="muted" style={{ marginBottom: 20 }}>Couldn’t sign you in with Telegram. Check your connection, or ask whoever runs this instance if it is invite-only.</div>
+      <Button variant="primary" icon="reset" onClick={() => useStore.getState().boot()}>Try again</Button>
+    </div>
+  )
 
   // Demo build: no backend to sign in against — the only way in is the local guest profile.
   if (DEMO) return (

@@ -149,6 +149,13 @@ tags:
       attached to a logged workout. Stored per profile (one quota for both) and named
       by the SHA-256 of its bytes; the state only carries a `MediaRef`. Every route here is a
       404 when the instance runs with `MEDIA_UPLOADS=0`.
+  - name: telegram
+    description: >-
+      Telegram Mini App sign-in (`TELEGRAM_BOT_TOKEN`). A 404 while no bot token is set.
+  - name: trainer
+    description: >-
+      Trainers, their clients and the programs a trainer sends. A client's inbox holds a
+      program until the client accepts or declines it.
   - name: coach
     description: >-
       AI Coach — plans, reviews and debriefs. Every route here answers 503 unless the
@@ -2851,6 +2858,227 @@ paths:
               example: { error: "unknown provider" }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/auth/telegram:
+    post:
+      tags: [telegram]
+      operationId: telegramSignIn
+      summary: "Sign in with Telegram initData"
+      description: |
+        The Mini App sends `Telegram.WebApp.initData`. The server checks its HMAC against the bot
+        token (and that it is under a day old), finds or creates the account for that Telegram id and
+        returns a Bearer token. A `start_param` of `t_<code>` links a new account to that trainer, and
+        counts as the invitation on an `INVITE_ONLY` instance. CSRF-exempt. 404 without a bot token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [initData], properties: { initData: { type: string } } }
+      responses:
+        '200':
+          description: `{ token, user, created }`.
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { description: initData is not genuine or is stale }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/trainer/enable:
+    post:
+      tags: [trainer]
+      operationId: trainerEnable
+      summary: "Become a trainer"
+      description: |
+        Makes the signed-in profile a trainer and returns its reusable invite code (and, when
+        `TELEGRAM_BOT_USERNAME` is set, the Telegram link that carries it).
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/trainer/invite:
+    get:
+      tags: [trainer]
+      operationId: trainerInvite
+      summary: "The trainer's invite code and link"
+      description: |
+        Trainers only.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/trainer/invite/reset:
+    post:
+      tags: [trainer]
+      operationId: trainerInviteReset
+      summary: "Replace the invite code"
+      description: |
+        Ends the old link. Clients already linked stay linked. Trainers only.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/trainer/join:
+    post:
+      tags: [trainer]
+      operationId: trainerJoin
+      summary: "Join a trainer by code"
+      description: |
+        Links the signed-in profile to the trainer who owns the code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string } } }
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '400': { description: invalid trainer code }
+
+  /api/trainer/leave:
+    post:
+      tags: [trainer]
+      operationId: trainerLeave
+      summary: "Leave your trainer"
+      description: |
+        Unlinks the signed-in profile from its trainer.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/trainer/mine:
+    get:
+      tags: [trainer]
+      operationId: trainerMine
+      summary: "Your trainer"
+      description: |
+        `{ trainer: {id, name} | null }`.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/trainer/clients:
+    get:
+      tags: [trainer]
+      operationId: trainerClients
+      summary: "List your clients"
+      description: |
+        Each client with workout count, last workout, last sync and the programs still waiting in their inbox. Trainers only.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/trainer/client:
+    get:
+      tags: [trainer]
+      operationId: trainerClient
+      summary: "One client's history"
+      description: |
+        Workouts, body weight, routines and week plan of a profile linked to the caller, plus the
+        programs the caller sent. Photos and videos are not included. Query: `id`. 404 for anyone else.
+        Trainers only.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: no such client }
+
+  /api/trainer/assign:
+    post:
+      tags: [trainer]
+      operationId: trainerAssign
+      summary: "Send a program to a client"
+      description: |
+        Puts a plan bundle (`{routines, week, customEx}`, at most 256 KB) in the client's inbox and
+        messages them on Telegram if they signed in that way. Nothing in the client's own data changes
+        until they accept. Trainers only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [clientId, bundle], properties: { clientId: { type: string }, bundle: { type: object }, note: { type: string, maxLength: 500 } } }
+      responses:
+        '200':
+          description: `{ id }`.
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '400': { description: not a valid program }
+        '404': { description: no such client }
+
+  /api/inbox:
+    get:
+      tags: [trainer]
+      operationId: inboxList
+      summary: "Programs sent to you"
+      description: |
+        `{ items }`, newest first, each `pending`, `accepted` or `declined`.
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/inbox/resolve:
+    post:
+      tags: [trainer]
+      operationId: inboxResolve
+      summary: "Accept or decline a program"
+      description: |
+        Records the answer and tells the trainer. Applying the program to the routines happens in the
+        app. Only a pending program can be answered.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [id, status], properties: { id: { type: string }, status: { type: string, enum: [accepted, declined] } } }
+      responses:
+        '200':
+          description: Ok
+          content:
+            application/json:
+              schema: { type: object }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { description: no such pending program }
 
 components:
   securitySchemes:

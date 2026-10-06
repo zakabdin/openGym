@@ -14,6 +14,9 @@
     document.documentElement.dir = l === 'ar' ? 'rtl' : 'ltr';
   } catch (e) {}
 </script>
+<!-- Mini App SDK: harmless in a normal browser (it only sets window.Telegram), the way the app
+     learns it is inside Telegram (lib/telegram.js). Must load before the app module. -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <title>openGym</title>
 <meta name="description" content="Personal gym & body weight tracker">
 <meta name="theme-color" content="#0c0e12">

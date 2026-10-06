@@ -7,13 +7,16 @@ server {
 
     # Sent on every response below. NOTE: an `add_header` inside a location replaces the whole
     # inherited set rather than adding to it, so the two locations further down that set their
-    # own Cache-Control have to repeat these three. Deliberately not a full Content-Security-
+    # own Cache-Control have to repeat these. Deliberately not a full Content-Security-
     # Policy: only frame-ancestors, which no part of the app depends on. TLS, HSTS and any
-    # stricter policy stay the reverse proxy's job (see SECURITY.md).
-    add_header X-Frame-Options "DENY" always;
+    # stricter policy stay the reverse proxy's job (see SECURITY.md). Who may put the app in a
+    # frame is FRAME_ANCESTORS: 'none' unless the operator opts in (a Telegram Mini App is shown
+    # inside Telegram Web's frame: https://web.telegram.org). frame-ancestors supersedes the old
+    # X-Frame-Options in every current browser, so that header is not sent: it cannot name an
+    # allowed site and would block exactly what the setting allows.
     add_header X-Content-Type-Options "nosniff" always;
     add_header Referrer-Policy "same-origin" always;
-    add_header Content-Security-Policy "frame-ancestors 'none'" always;
+    add_header Content-Security-Policy "frame-ancestors ${FRAME_ANCESTORS}" always;
 
     # API → backend container.
     # `^~` so this prefix beats the regex locations below: without it a request for a path such
@@ -109,10 +112,9 @@ server {
         # looked for the file under the prefix on disk. Same identity-when-empty rewrite here.
         rewrite ^${BASE_PATH}/(.*)$ /$1 break;
         add_header Cache-Control "no-cache, must-revalidate";
-        add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "same-origin" always;
-        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        add_header Content-Security-Policy "frame-ancestors ${FRAME_ANCESTORS}" always;
     }
 
     # Exercise images/GIFs never change → cache hard
@@ -122,10 +124,9 @@ server {
         rewrite ^${BASE_PATH}/(.*)$ /$1 break;
         expires 30d;
         add_header Cache-Control "public, max-age=2592000, immutable";
-        add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
         add_header Referrer-Policy "same-origin" always;
-        add_header Content-Security-Policy "frame-ancestors 'none'" always;
+        add_header Content-Security-Policy "frame-ancestors ${FRAME_ANCESTORS}" always;
     }
 
     gzip on;

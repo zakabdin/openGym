@@ -66,6 +66,8 @@ ENV CF_CONNECTING_IP=""
 # slash. Empty (the default) serves the app at the root exactly as before. A proxy that strips
 # the prefix needs nothing here — the app derives the API address from its own URL.
 ENV BASE_PATH=""
+# Who may frame the app (CSP frame-ancestors); see docker-compose.yml.
+ENV FRAME_ANCESTORS="'none'"
 # The largest upload nginx lets through to the API's photo and video route (nginx size syntax).
 # Above the API's own video cap (MEDIA_VIDEO_MAX_MB, 40 by default) so the API, which says why,
 # is the one that refuses a file — raise both together.

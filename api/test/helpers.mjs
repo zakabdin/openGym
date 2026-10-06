@@ -5,6 +5,7 @@
  * import. Hence dynamic imports everywhere below, and one helper that does it in the right
  * order. node:test runs each file in its own process, so one directory per file is enough.
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,4 +80,13 @@ export function sampleState(over = {}) {
     }],
     ...over
   };
+}
+
+/** A Telegram Mini App initData string signed the way Telegram signs it, for `token`. */
+export function signInitData(fields, token) {
+  const p = new URLSearchParams(fields);
+  const check = [...p.entries()].map(([k, v]) => k + '=' + v).sort().join('\n');
+  const key = crypto.createHmac('sha256', 'WebAppData').update(token).digest();
+  p.set('hash', crypto.createHmac('sha256', key).update(check).digest('hex'));
+  return p.toString();
 }

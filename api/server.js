@@ -30,6 +30,11 @@ import {
   listPasskeys, addPasskeyRecord, renamePasskeyRecord, removePasskeyRecord, passkeyRemovalRefused, MAX_PASSKEYS
 } from './passkeys-store.js';
 import { createDeviceLink, findDeviceLink, burnDeviceLink, dropDeviceLinks } from './device-link.js';
+import { verifyInitData, sendTelegramMessage } from './telegram.js';
+import {
+  makeTrainerCode, trainerCodeFromStart, findTrainerByCode, clientsOf, isClientOf,
+  cleanBundle, newAssignment, addAssignment, resolveAssignment
+} from './trainer.js';
 import { createMediaStore, mediaLimits, mediaConfig, MediaError, HASH_RE } from './media.js';
 
 const PORT = +(process.env.PORT || 3000);
@@ -50,6 +55,12 @@ const ALLOW_GUEST = !/^(0|false|no|off)$/i.test(process.env.ALLOW_GUEST || '');
 // every account that opts in, so an instance has to ask for it. While it is off every password
 // route answers 404 and the app shows none of it; hashes already stored stay where they are.
 const PASSWORD_LOGIN = /^(1|true|yes|on)$/i.test(process.env.PASSWORD_LOGIN || '');
+// Telegram Mini App sign-in. Off until a bot token is set: while it is off POST /api/auth/telegram
+// answers 404 and /api/config says nothing about Telegram. The username only builds the invite
+// links a trainer shares (https://t.me/<bot>?startapp=t_<code>), which needs the bot's Mini App
+// set as its main app in BotFather.
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+const TELEGRAM_BOT_USERNAME = (process.env.TELEGRAM_BOT_USERNAME || '').trim().replace(/^@/, '');
 // The language the sign-in screen, and every profile that never picked one, starts in (#303) —
 // for an instance whose people share a language. Only a tag's shape is checked here; the app
 // matches it against the languages it has and ignores one it does not know. Unset, it is left
@@ -122,6 +133,13 @@ function notePull(user, now = Date.now()) {
 }
 // The later of the last push and the last pull.
 const lastSyncOf = (u, S) => Math.max(S?._ts || 0, u?.lastPull || 0) || null;
+// A trainee's inbox of programs from their trainer. Its own file, written only by the trainer
+// routes below, so a trainee's PUT /api/data can neither overwrite it nor 409 against it.
+const assignFile = uid => path.join(DATA, 'assignments-' + uid.replace(/[^a-zA-Z0-9_-]/g, '') + '.json');
+function readAssignments(uid) {
+  try { const a = JSON.parse(fs.readFileSync(assignFile(uid), 'utf8')); return Array.isArray(a) ? a : []; } catch { return []; }
+}
+const writeAssignments = (uid, list) => atomicWrite(assignFile(uid), JSON.stringify(list), 0o600);
 function readState(uid) {
   try { return JSON.parse(fs.readFileSync(stateFile(uid), 'utf8')); } catch { return null; }
 }
@@ -503,6 +521,17 @@ function sessionOf(req) {
 function readSession(req) {
   return sessionOf(req)?.user || null;
 }
+// Guard for /api/trainer/* that act as a trainer.
+function requireTrainer(req, res) {
+  const user = readSession(req);
+  if (!user) { json(res, 401, { error: 'not signed in' }); return null; }
+  if (user.role !== 'trainer') { json(res, 403, { error: 'not a trainer' }); return null; }
+  return user;
+}
+const trainerInvite = u => ({
+  code: u.trainerCode,
+  ...(TELEGRAM_BOT_USERNAME ? { link: `https://t.me/${TELEGRAM_BOT_USERNAME}?startapp=t_${u.trainerCode}` } : {})
+});
 // Guard for /api/admin/* — resolves the caller and 401/403s if they aren't an admin.
 function requireAdmin(req, res) {
   const user = readSession(req);
@@ -542,7 +571,7 @@ const clearCookie = COOKIE === LEGACY_COOKIE
 const CSRF_EXEMPT = new Set([
   'POST /api/register/options', 'POST /api/register/verify',
   'POST /api/login/options', 'POST /api/login/verify',
-  'POST /api/pair/redeem'
+  'POST /api/pair/redeem', 'POST /api/auth/telegram'
 ]);
 const originsMatch = (a, b) => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
 function csrfOk(req, key) {
@@ -829,7 +858,9 @@ const THROTTLED = {
   // budget: the password that may prove them counts its own failures (passwordAttempt).
   'POST /api/device-link/options': 'link', 'POST /api/device-link/verify': 'link',
   'POST /api/account/passkeys/options': null, 'POST /api/account/device-link': null,
-  'DELETE /api/account/passkeys': null
+  'DELETE /api/account/passkeys': null,
+  // initData is an HMAC, not a guess, so there is nothing to count: the burst budget is enough.
+  'POST /api/auth/telegram': null
 };
 
 // Which address the throttle counts against. Unlike clientIp() above, which only labels a log
@@ -951,7 +982,10 @@ function loginTarget(body) {
 }
 const acctKey = u => 'acct:' + u.id;
 const passkeyCount = u => db.creds.filter(c => c.userId === u.id).length;
-const publicUser = u => ({ id: u.id, name: u.name, admin: isAdmin(u) });
+const publicUser = u => ({
+  id: u.id, name: u.name, admin: isAdmin(u),
+  ...(u.role ? { role: u.role } : {}), ...(u.trainerId ? { trainerId: u.trainerId } : {})
+});
 const POLICY_ERRORS = {
   'too-short': `the password needs at least ${MIN_LENGTH} characters`,
   'too-long': `the password can have at most ${MAX_LENGTH} characters`,
@@ -1755,6 +1789,7 @@ const routes = {
       invite_only: INVITE_ONLY, allow_guest: ALLOW_GUEST,
       // Only when on, so an instance without passwords answers exactly as it did before (#118).
       ...(PASSWORD_LOGIN ? { password_login: true } : {}),
+      ...(TELEGRAM_BOT_TOKEN ? { telegram: true } : {}),
       // Public: the sign-in screen is the first thing that reads it.
       ...(DEFAULT_LANG ? { default_lang: DEFAULT_LANG } : {}),
       // Public like the two flags above: the caps are not a secret, and the absence of the
@@ -1776,7 +1811,7 @@ const routes = {
     if (!s) return json(res, 401, { error: 'not signed in' });
     const { user } = s;
     const renew = s.bearer && s.exp - Date.now() < SESSION_DAYS * 86400000 / 2;
-    json(res, 200, { user: { id: user.id, name: user.name, admin: isAdmin(user) }, ...(renew ? { token: makeSession(user) } : {}) });
+    json(res, 200, { user: publicUser(user), ...(renew ? { token: makeSession(user) } : {}) });
   },
 
   'POST /api/register/options': async (req, res) => {
@@ -1972,6 +2007,184 @@ const routes = {
     }
     audit(req, 'auth.pair.ok', { user });
     json(res, 200, { token: makeSession(user), user: { id: user.id, name: user.name, admin: isAdmin(user) } });
+  },
+
+  // Telegram Mini App sign-in: initData in, Bearer token out (a Mini App's WebView may not keep
+  // a cookie, and on Telegram Web it is a third-party frame). An account is made on first open,
+  // keyed on the Telegram id; a trainer's deep link (start_param t_<code>) binds the newcomer to
+  // that trainer, and on an INVITE_ONLY instance counts as the invitation.
+  ...(TELEGRAM_BOT_TOKEN ? {
+    'POST /api/auth/telegram': async (req, res) => {
+      const body = await readBody(req);
+      const tg = verifyInitData(text(body.initData), TELEGRAM_BOT_TOKEN);
+      if (!tg) {
+        audit(req, 'auth.telegram.fail', { ok: false, msg: 'initdata-invalid' });
+        return json(res, 401, { error: 'invalid Telegram sign-in' });
+      }
+      const trainer = findTrainerByCode(db.users, trainerCodeFromStart(tg.startParam));
+      let user = db.users.find(u => u.tg?.id === tg.id);
+      let created = false;
+      if (!user) {
+        if (INVITE_ONLY && !trainer) {
+          audit(req, 'auth.telegram.fail', { ok: false, name: tg.name, msg: 'invite-only' });
+          return json(res, 403, { error: 'this instance is invite-only', code: 'invite-only' });
+        }
+        user = {
+          id: crypto.randomBytes(12).toString('base64url'), name: tg.name, created: new Date().toISOString(),
+          tg: { id: tg.id, ...(tg.username ? { username: tg.username } : {}) },
+          ...(trainer ? { trainerId: trainer.id, invitedBy: 't:' + trainer.id } : {})
+        };
+        db.users.push(user); created = true;
+        saveDb();
+      } else if (user.disabled) {
+        audit(req, 'auth.telegram.fail', { ok: false, user, msg: 'account-disabled' });
+        return json(res, 403, { error: 'account disabled' });
+      } else if (trainer && !user.trainerId && trainer.id !== user.id) {
+        user.trainerId = trainer.id;
+        saveDb();
+      }
+      if (created && trainer) sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer.tg?.id, `${user.name} joined you on openGym.`);
+      audit(req, created ? 'auth.telegram.register' : 'auth.telegram.ok', { user, msg: trainer ? 'trainer:' + trainer.id : undefined });
+      json(res, 200, { token: makeSession(user), user: publicUser(user), created });
+    }
+  } : {}),
+
+  // ---- Trainer / trainee ----
+  // Any signed-in profile may become a trainer (an instance is a gym or a circle of friends, not a
+  // marketplace); what a trainer can reach is only the profiles that joined through their code.
+  'POST /api/trainer/enable': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    if (!user.trainerCode) user.trainerCode = makeTrainerCode();
+    user.role = 'trainer';
+    saveDb();
+    audit(req, 'trainer.enable', { user });
+    json(res, 200, { user: publicUser(user), ...trainerInvite(user) });
+  },
+
+  'GET /api/trainer/invite': async (req, res) => {
+    const user = requireTrainer(req, res);
+    if (!user) return;
+    json(res, 200, trainerInvite(user));
+  },
+
+  // A new code ends the old link: people already linked stay linked.
+  'POST /api/trainer/invite/reset': async (req, res) => {
+    const user = requireTrainer(req, res);
+    if (!user) return;
+    user.trainerCode = makeTrainerCode();
+    saveDb();
+    audit(req, 'trainer.invite.reset', { user });
+    json(res, 200, trainerInvite(user));
+  },
+
+  // A trainee already signed in joins a trainer by code (the link opens the app; this is for
+  // typing the code in, or following the link in a browser).
+  'POST /api/trainer/join': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const trainer = findTrainerByCode(db.users, text(body.code).trim().toLowerCase());
+    if (!trainer || trainer.id === user.id) return json(res, 400, { error: 'invalid trainer code' });
+    user.trainerId = trainer.id;
+    saveDb();
+    audit(req, 'trainer.join', { user, target: trainer });
+    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer.tg?.id, `${user.name} joined you on openGym.`);
+    json(res, 200, { user: publicUser(user), trainer: { id: trainer.id, name: trainer.name } });
+  },
+
+  'POST /api/trainer/leave': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    delete user.trainerId;
+    saveDb();
+    audit(req, 'trainer.leave', { user });
+    json(res, 200, { user: publicUser(user) });
+  },
+
+  // Who the signed-in profile's trainer is, if any; the trainee's side of the relationship.
+  'GET /api/trainer/mine': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const t = user.trainerId && db.users.find(u => u.id === user.trainerId && u.role === 'trainer' && !u.disabled);
+    json(res, 200, { trainer: t ? { id: t.id, name: t.name } : null });
+  },
+
+  'GET /api/trainer/clients': async (req, res) => {
+    const user = requireTrainer(req, res);
+    if (!user) return;
+    const clients = clientsOf(db.users, user.id).map(c => {
+      const S = readState(c.id) || {};
+      const workouts = records(S.workouts);
+      const last = workouts[workouts.length - 1];
+      return {
+        id: c.id, name: c.name, joined: c.created || null,
+        workouts: workouts.length, lastWorkout: last ? last.d : null,
+        lastSync: lastSyncOf(c, S),
+        pending: readAssignments(c.id).filter(a => a.status === 'pending' && a.from === user.id).length
+      };
+    });
+    json(res, 200, { clients, now: Date.now() });
+  },
+
+  // One client's history. The same fields the admin drill-down shows (workouts without media
+  // refs, body weight, routine summaries), for a profile that joined this trainer only.
+  'GET /api/trainer/client': async (req, res) => {
+    const user = requireTrainer(req, res);
+    if (!user) return;
+    const id = new URL(req.url, 'http://x').searchParams.get('id');
+    const c = db.users.find(x => x.id === id);
+    if (!c || !isClientOf(c, user) || c.disabled) return json(res, 404, { error: 'no such client' });
+    const S = readState(c.id) || {};
+    json(res, 200, {
+      client: { id: c.id, name: c.name, joined: c.created || null },
+      unit: S.unit || 'kg',
+      lastSync: lastSyncOf(c, S),
+      routines: records(S.routines).map(r => ({ id: r.id, name: r.name, emoji: r.emoji, count: records(r.ex).length })),
+      week: S.week && typeof S.week === 'object' ? S.week : {},
+      bodyweight: records(S.bodyweight),
+      workouts: records(S.workouts).reverse().map(({ media, ...w }) => w),
+      assignments: readAssignments(c.id).filter(a => a.from === user.id).map(({ bundle, ...a }) => ({ ...a, routines: bundle.routines.length }))
+    });
+  },
+
+  // Send a program: lands in the client's inbox, to be accepted or declined by them.
+  'POST /api/trainer/assign': async (req, res) => {
+    const user = requireTrainer(req, res);
+    if (!user) return;
+    const body = await readBody(req);
+    const c = db.users.find(x => x.id === text(body.clientId));
+    if (!c || !isClientOf(c, user) || c.disabled) return json(res, 404, { error: 'no such client' });
+    const bundle = cleanBundle(body.bundle);
+    if (!bundle) return json(res, 400, { error: 'a program needs at least one routine (and fits in 256 KB)' });
+    const a = newAssignment({ from: user.id, fromName: user.name, note: text(body.note), bundle });
+    writeAssignments(c.id, addAssignment(readAssignments(c.id), a));
+    audit(req, 'trainer.assign', { user, target: c, msg: a.id });
+    sendTelegramMessage(TELEGRAM_BOT_TOKEN, c.tg?.id, `${user.name} sent you a new program on openGym.`);
+    json(res, 200, { id: a.id });
+  },
+
+  // The trainee's inbox, newest first.
+  'GET /api/inbox': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    json(res, 200, { items: readAssignments(user.id) });
+  },
+
+  // The trainee's answer. Applying the program to their routines happens in the app (the same
+  // plan-share merge as an imported plan); this records the outcome and tells the trainer.
+  'POST /api/inbox/resolve': async (req, res) => {
+    const user = readSession(req);
+    if (!user) return json(res, 401, { error: 'not signed in' });
+    const body = await readBody(req);
+    const list = readAssignments(user.id);
+    const a = resolveAssignment(list, text(body.id), text(body.status));
+    if (!a) return json(res, 404, { error: 'no such pending program' });
+    writeAssignments(user.id, list);
+    audit(req, a.status === 'accepted' ? 'trainer.inbox.accepted' : 'trainer.inbox.declined', { user, msg: a.id });
+    const trainer = db.users.find(u => u.id === a.from);
+    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer?.tg?.id, `${user.name} ${a.status} your program.`);
+    json(res, 200, { ok: true });
   },
 
   // Absent entirely while PASSWORD_LOGIN is off, so each of them is a plain 404.

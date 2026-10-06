@@ -178,6 +178,16 @@ export default function Home() {
         : t("No entries yet — log your weight to start the curve. It's also asked before every workout.")}</div>}
     </div>}
 
+    {user && <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/team'))}>
+      <div className="row between">
+        <div>
+          <div className="row" style={{ gap: 7, fontSize: 17, fontWeight: 600 }}><Icon name="person" />{user.role === 'trainer' ? 'Clients & programs' : 'Trainer & programs'}</div>
+          <div className="muted small" style={{ marginTop: 2 }}>{user.role === 'trainer' ? 'See your clients and send them programs' : user.trainerId ? 'Programs from your trainer' : 'Join a trainer, or become one'}</div>
+        </div>
+        <Icon name="chevronRight" className="chev" />
+      </div>
+    </div>}
+
     <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => calendarSheet())}>
       <div className="row between">
         <div>

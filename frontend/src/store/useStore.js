@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { api, setRemoteAuth } from '../lib/api.js'
+import { IN_TELEGRAM, telegramSession } from '../lib/telegram.js'
 import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { registerCustom } from '../lib/exercises.js'
@@ -1488,7 +1489,9 @@ export const useStore = create((set, get) => {
         if (logoutOwed()) { finishBoot(); return }
       }
       try {
-        const me = await api('/api/me')
+        // Inside Telegram the initData is the sign-in (a Mini App has no passkeys, and its frame
+        // may not keep a cookie); it answers with the same user /api/me would.
+        const me = IN_TELEGRAM ? await telegramSession() : await api('/api/me')
         if (!me.user?.id) throw Object.assign(new Error('no user'), { status: 200, code: 'bad-response' })
         get().setUser(me.user)
         // Re-stamp the reminder's timezone on every load — keeps it correct if you're travelling,

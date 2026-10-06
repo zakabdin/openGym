@@ -14,6 +14,7 @@ import { installViewportGuard } from './lib/viewport-guard.js'
 import { installChipDrag } from './lib/hchips.js'
 import { syncPushSubscription } from './lib/push.js'
 import { MOBILE } from './lib/mobile.js'
+import { bindTelegramBack } from './lib/telegram.js'
 import { exitWorkoutEdit, startFlow } from './sheets.jsx'
 import Icon from './components/Icon.jsx'
 import TabBar from './components/TabBar.jsx'
@@ -38,6 +39,7 @@ import Muscles from './views/Muscles.jsx'
 import StructuralBalance from './views/StructuralBalance.jsx'
 import Settings from './views/Settings.jsx'
 import Admin from './views/Admin.jsx'
+import Team, { TeamClient } from './views/Team.jsx'
 import CoachChat from './views/CoachChat.jsx'
 import CoachIntake from './views/CoachIntake.jsx'
 import CoachSetup from './views/CoachSetup.jsx'
@@ -63,6 +65,8 @@ function applyPrefs(theme, accent) {
 function Shell() {
   const navigate = useNavigate()
   const loc = useLocation()
+  // Inside Telegram its own header arrow is the back control: shown off the home screen.
+  useEffect(() => bindTelegramBack(loc.pathname !== '/home', () => navigate(-1)), [loc.pathname, navigate])
   const navType = useNavigationType()
   const { S, user, ready } = useStore()
   // iOS: whether timer sounds get past the ring/silent switch (Settings → Sounds). Page-level,
@@ -195,6 +199,8 @@ function Shell() {
               <Route path="/coach/intake" element={<CoachIntake />} />
               <Route path="/coach/proposal" element={<Navigate to="/coach" replace />} />
               <Route path="/coach/setup" element={<CoachSetup />} />
+              <Route path="/team" element={<Team />} />
+              <Route path="/team/c/:id" element={<TeamClient />} />
               <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>

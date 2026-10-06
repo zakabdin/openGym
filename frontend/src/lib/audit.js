@@ -26,6 +26,18 @@ const LABELS = {
   'auth.pair.create': 'Created a pairing code',
   'auth.pair.ok': 'Paired a phone',
   'auth.pair.fail': 'Pairing failed',
+  // Telegram Mini App sign-in: the Telegram id is the credential, an account is made on first open.
+  'auth.telegram.ok': 'Signed in with Telegram',
+  'auth.telegram.register': 'Created a profile with Telegram',
+  'auth.telegram.fail': 'Telegram sign-in failed',
+  // Trainers and the programs they send to their clients.
+  'trainer.enable': 'Became a trainer',
+  'trainer.invite.reset': 'Replaced their trainer invite link',
+  'trainer.join': 'Joined a trainer',
+  'trainer.leave': 'Left their trainer',
+  'trainer.assign': 'Sent a program to a client',
+  'trainer.inbox.accepted': 'Accepted a program from their trainer',
+  'trainer.inbox.declined': 'Declined a program from their trainer',
   // Password sign-in (#118), where the instance offers it.
   'auth.password.ok': 'Signed in with a password',
   'auth.password.fail': 'Password sign-in failed',
@@ -81,6 +93,8 @@ const REASONS = {
   'invite-invalid': 'the invite code was used or revoked in the meantime',
   'invite-rejected': 'wrong or already-used invite code',
   'code-invalid': 'wrong or expired pairing code',
+  'initdata-invalid': 'the Telegram data was forged, tampered with or too old',
+  'invite-only': 'this instance is invite-only and there was no trainer link',
   'user-unavailable': 'the profile behind the code is disabled or gone',
   'bad-password': 'wrong password',
   'bad-current': 'wrong current password',

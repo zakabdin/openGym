@@ -73,8 +73,9 @@ in the thread; there's no objection, and no request to sit on it indefinitely.
   pairing included, belongs in the reverse proxy you put in front of it. A way past that
   throttle *is* in scope, and so is genuine amplification (one small request causing unbounded
   work).
-- **Missing security headers.** `web/nginx.conf.template` sets `X-Frame-Options: DENY`,
-  `Content-Security-Policy: frame-ancestors 'none'`, `X-Content-Type-Options: nosniff` and
+- **Missing security headers.** `web/nginx.conf.template` sets
+  `Content-Security-Policy: frame-ancestors 'none'` (`FRAME_ANCESTORS` opens it to named sites, e.g.
+  Telegram Web for the Mini App; `X-Frame-Options` is not sent, as it cannot name one), `X-Content-Type-Options: nosniff` and
   `Referrer-Policy: same-origin`. It deliberately does **not** set HSTS or a full CSP: TLS is the
   reverse proxy's job, and a script/style policy tight enough to be worth having needs testing
   against the built app rather than being asserted here. A concrete attack that a header would
