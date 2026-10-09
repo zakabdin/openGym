@@ -208,6 +208,8 @@ export const PT_BR_OVERRIDES = {
   'Export plan file': 'Exportar arquivo do plano',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': 'Um pequeno arquivo que um amigo pode importar no próprio openGym — somente rotinas, sem seus treinos ou pesagens.',
   'Print / Save as PDF': 'Imprimir / Salvar como PDF',
+  'Share as PDF': 'Compartilhar como PDF',
+  'PDF downloaded': 'PDF baixado',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Adicione primeiro um exercício a uma rotina — um plano vazio não tem nada para compartilhar.',
   'Import a plan file': 'Importar arquivo do plano',
   'Plan file saved — send it to a friend': 'Arquivo do plano salvo — envie-o para um amigo',

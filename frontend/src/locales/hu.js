@@ -651,6 +651,8 @@ export default {
   'Export plan file': 'Tervfájl exportálása',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': 'Egy kis fájl, amit egy barát a saját openGym-jébe importál — csak rutinok, edzések és mérések nélkül.',
   'Print / Save as PDF': 'Nyomtatás / Mentés PDF-ként',
+  'Share as PDF': 'Megosztás PDF-ként',
+  'PDF downloaded': 'PDF letöltve',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Egy tiszta nyomtatvány, egy oldal tervenként — egyetlen gyakorlat sem törik meg oldalhatáron.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Adj hozzá előbb egy gyakorlatot egy rutinhoz — egy üres tervnek nincs mit megosztania.',
   'Got a plan from a friend?': 'Kaptál tervet egy baráttól?',

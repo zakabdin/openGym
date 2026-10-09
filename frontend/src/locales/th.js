@@ -651,6 +651,8 @@ export default {
   'Export plan file': 'ส่งออกไฟล์แผน',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': 'ไฟล์เล็กๆ ให้เพื่อนนำเข้า openGym ของตัวเอง — มีแค่รูทีนเท่านั้น ไม่มีการออกกำลังกายหรือน้ำหนักของคุณ',
   'Print / Save as PDF': 'พิมพ์ / บันทึกเป็น PDF',
+  'Share as PDF': 'แชร์เป็น PDF',
+  'PDF downloaded': 'ดาวน์โหลด PDF แล้ว',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'พิมพ์ออกมาสวยงาม 1 หน้าต่อ 1 แผน — ไม่มีท่าไหนถูกตัดข้ามหน้า',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'เพิ่มท่าเข้ารูทีนก่อน — แผนว่างเปล่าไม่มีอะไรให้แชร์',
   'Got a plan from a friend?': 'ได้รับแผนจากเพื่อนหรือเปล่า?',

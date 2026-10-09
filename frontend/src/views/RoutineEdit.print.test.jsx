@@ -11,7 +11,7 @@ vi.mock('../lib/api.js', () => ({ api: vi.fn(() => Promise.resolve({})) }))
 vi.mock('../sheets.jsx', () => ({ exConfigSheet: vi.fn(), exercisePicker: vi.fn(), glyphPicker: vi.fn(), confirmSheet: vi.fn() }))
 vi.mock('../components/Media.jsx', () => ({ Thumb: () => null }))
 vi.mock('../components/BodyMap.jsx', () => ({ default: () => null }))
-vi.mock('../lib/plan-share.js', async importOriginal => ({ ...await importOriginal(), printPlan: vi.fn() }))
+vi.mock('../lib/plan-pdf.js', () => ({ sharePlanPdf: vi.fn(() => Promise.resolve('shared')) }))
 vi.mock('../lib/mobile.js', async importOriginal => {
   const real = await importOriginal()
   env.printHtml = vi.fn(() => Promise.resolve())
@@ -20,7 +20,7 @@ vi.mock('../lib/mobile.js', async importOriginal => {
 
 import RoutineEdit from './RoutineEdit.jsx'
 import { DEF, useStore } from '../store/useStore.js'
-import { printPlan } from '../lib/plan-share.js'
+import { sharePlanPdf as printPlan } from '../lib/plan-pdf.js'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, host
@@ -34,7 +34,7 @@ function mount(ex, name = 'Push day') {
   root = createRoot(host)
   act(() => root.render(<MemoryRouter initialEntries={['/plan/r/r1']}><Routes><Route path="/plan/r/:id" element={<RoutineEdit />} /></Routes></MemoryRouter>))
 }
-const printButton = () => [...host.querySelectorAll('button')].find(b => b.textContent.trim() === 'Print / Save as PDF')
+const printButton = () => [...host.querySelectorAll('button')].find(b => /^(Print \/ Save as PDF|Share as PDF)$/.test(b.textContent.trim()))
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -46,7 +46,7 @@ afterEach(() => {
 })
 
 describe('RoutineEdit — print this routine (#282)', () => {
-  it('opens the print dialog with this routine alone on the web', () => {
+  it('shares a PDF of this routine alone on the web', () => {
     mount([{ id: '0025', sets: 3, mode: 'reps', reps: 5, weight: 80 }])
     act(() => printButton().click())
     expect(printPlan).toHaveBeenCalledOnce()

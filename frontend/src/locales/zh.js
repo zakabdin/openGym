@@ -673,6 +673,8 @@ export default {
   'Export plan file': '导出计划文件',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': '一个小文件，朋友可以导入到自己的 openGym——只有训练日，不包含你的训练记录或体重。',
   'Print / Save as PDF': '打印 / 保存为 PDF',
+  'Share as PDF': '以 PDF 分享',
+  'PDF downloaded': 'PDF 已下载',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': '干净的打印版，每个计划一页——任何动作都不会被分到两页。',
   'Add an exercise to a routine first — an empty plan has nothing to share.': '请先给训练日添加动作——空的计划没有可分享的内容。',
   'Got a plan from a friend?': '收到朋友的计划了吗？',

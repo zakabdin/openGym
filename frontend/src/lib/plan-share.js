@@ -370,6 +370,45 @@ function weekHTML(S) {
 }
 
 /**
+ * The same printout as planPrintHTML, as plain data — what the PDF is drawn from (lib/plan-pdf.js),
+ * so the two never word anything differently. `routineId` is that one routine on its own.
+ */
+export function planPrintData(S, owner, { routineId } = {}) {
+  const unit = S.unit || 'kg'
+  const speedUnit = speedUnitOf(S)
+  const single = routineId ? (S.routines || []).find(r => r.id === routineId) || null : null
+  const routines = routineId ? [single].filter(Boolean) : (S.routines || []).filter(r => r.ex && r.ex.length)
+  const item = e => {
+    const ex = EXIDX[e.id]
+    const cap = ex && exerciseNameClass(ex)
+    const name = ex ? exerciseNameFor(ex) : t('Unknown exercise')
+    return {
+      name: cap ? name.replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()) : name,
+      part: ex && ex.bp && ex.bp !== 'cardio' ? t(ex.bp) : '',
+      scheme: scheme(e, unit, speedUnit),
+      note: e.note || ''
+    }
+  }
+  return {
+    lang: getLang(), rtl: RTL_LANGS.has(getLang()),
+    title: single ? single.name : t('Weekly Training Plan'),
+    sub: [single ? exCount(single.ex.length) : null, owner, todayISO()].filter(Boolean).join(' · '),
+    week: routineId ? null : weekOrder(weekStartOf(S)).map(d => {
+      const names = [].concat(S.week?.[d] || []).map(id => S.routines.find(x => x.id === id)?.name).filter(Boolean)
+      return { day: t(DAYN[d]), value: names.length ? deriveSessionName(names) : '' , rest: t('Rest') }
+    }),
+    routines: routines.map(r => ({
+      name: r.name, count: exCount(r.ex.length), bare: !!single,
+      units: units(r.ex).map(u => ({ superset: u.length > 1, items: u.map(item) })),
+      empty: t('No exercises yet.')
+    })),
+    none: t('No routines yet.'),
+    blocks: { week: t('Week schedule'), routines: t('Routines'), superset: t('Superset') },
+    footer: t('Made with openGym') + ' · opengym.duarte-santos.ch'
+  }
+}
+
+/**
  * Full self-contained HTML for the print/PDF view. With `routineId` it is that one routine on
  * its own page (#282) — the session you take to the gym, not the week around it — so the week
  * schedule is left out and the routine's name is the page title.

@@ -673,6 +673,8 @@ export default {
   'Export plan file': 'Plan dosyasını dışa aktar',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': 'Bir arkadaşının kendi openGym\'ine aktardığı küçük bir dosya — yalnızca rutinler, antrenmanların veya tartıların değil.',
   'Print / Save as PDF': 'Yazdır / PDF olarak kaydet',
+  'Share as PDF': 'PDF olarak paylaş',
+  'PDF downloaded': 'PDF indirildi',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Temiz bir çıktı, plan başına tek sayfa — hiçbir egzersiz sayfalar arasında bölünmez.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Önce bir rutine egzersiz ekle — boş bir planın paylaşacak bir şeyi yok.',
   'Got a plan from a friend?': 'Bir arkadaşından plan mı aldın?',

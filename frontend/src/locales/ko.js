@@ -673,6 +673,8 @@ export default {
   'Export plan file': '계획 파일 내보내기',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': '친구가 자신의 openGym으로 가져올 수 있는 작은 파일 — 루틴만 포함되며 운동 기록이나 체중은 포함되지 않습니다.',
   'Print / Save as PDF': '인쇄 / PDF로 저장',
+  'Share as PDF': 'PDF로 공유',
+  'PDF downloaded': 'PDF를 다운로드했습니다',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': '계획당 한 페이지의 깔끔한 출력물 — 어떤 운동도 페이지 사이에서 나뉘지 않습니다.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': '먼저 루틴에 운동을 추가하세요 — 빈 계획은 공유할 것이 없습니다.',
   'Got a plan from a friend?': '친구에게서 계획을 받으셨나요?',

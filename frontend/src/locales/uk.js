@@ -500,6 +500,8 @@ export default {
   'Export plan file': 'Експортувати файл плану',
   'A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.': 'Невеликий файл, який друг імпортує у свій openGym — лише програми, без твоїх тренувань і зважувань.',
   'Print / Save as PDF': 'Друк / Зберегти як PDF',
+  'Share as PDF': 'Поділитися як PDF',
+  'PDF downloaded': 'PDF завантажено',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Охайний друк, одна сторінка на план — жодна вправа не розривається між сторінками.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Спочатку додай вправу в програму — порожнім планом нема чим ділитися.',
   'Got a plan from a friend?': 'Отримав план від друга?',

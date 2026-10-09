@@ -27,7 +27,8 @@ import MuscleExplorer from './components/MuscleExplorer.jsx'
 import { exerciseMuscleSnapshot, loadOfWorkouts, MUSCLES, MUSCLE_NAME, normalizeMuscleGroups, hasExplicitMuscleMetadata, inMuscleOrder } from './lib/muscles.js'
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { importHevyData, HevyApiError, HEVY_DEV_SETTINGS, mergeHevyRoutines } from './lib/import-hevy.js'
-import { buildPlanBundle, parsePlan, mergePlan, printPlan, planPrintHTML } from './lib/plan-share.js'
+import { buildPlanBundle, parsePlan, mergePlan, planPrintHTML } from './lib/plan-share.js'
+import { sharePlanPdf } from './lib/plan-pdf.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { exerciseHistory } from './lib/exercise-history.js'
 import { policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS, weightIncrement } from './lib/progression.js'
@@ -1759,11 +1760,12 @@ function PlanTools({ close }) {
     <div style={{ height: 12 }} />
     <Button variant="tinted" icon="download" onClick={() => {
       close()
-      // Web: the browser's print dialog (→ Save as PDF). Mobile: the OS print flow via the
-      // native Print plugin — Android WebView has no window.print(). Same printable HTML both ways.
+      // Web: a real PDF file, handed to the share sheet (or downloaded) — window.print() does
+      // nothing in a webview such as Telegram's. Mobile app: the OS print flow via the native
+      // Print plugin, which Android WebView needs because it has no window.print().
       if (MOBILE) printHtml(planPrintHTML(st, user?.name || ''), t('Weekly Training Plan')).catch(() => { /* dismissed */ })
-      else printPlan(st, user?.name || '')
-    }} disabled={!hasRoutines}>{t('Print / Save as PDF')}</Button>
+      else sharePlanPdf(st, user?.name || '').then(r => { if (r === 'downloaded') toast(t('PDF downloaded')) }).catch(() => toast(t('Something went wrong')))
+    }} disabled={!hasRoutines}>{MOBILE ? t('Print / Save as PDF') : t('Share as PDF')}</Button>
     <div className="dim small" style={{ margin: '7px 2px 0', lineHeight: 1.4 }}>{t('A clean one-page-per-plan printout — no exercise ever splits across a page.')}</div>
     {!hasRoutines && <div className="dim small" style={{ margin: '12px 2px 0' }}>{t('Add an exercise to a routine first — an empty plan has nothing to share.')}</div>}
     <h4 className="sec">{t('Got a plan from a friend?')}</h4>
