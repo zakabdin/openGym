@@ -22,3 +22,6 @@ node_modules
 junit.xml
 coverage/
 frontend/bundle-size.json
+
+# Server login helper (names the deployment)
+ssh-server.sh
