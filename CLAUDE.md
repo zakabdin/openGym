@@ -136,6 +136,17 @@ output), `api`, `web` (multi-stage build of `frontend/` served by nginx, which a
 `web/nginx.conf.template` is rendered from env vars at container start (`NGINX_PORT`, `BACKEND`,
 `PORT`), so host/port remapping works against prebuilt images without a rebuild.
 
+### The Telegram bot's commands
+
+`api/bot.js` answers what people type to the bot (`/start /help /plan /today /last /progress /weight
+/clients /language /reminders /notifications`), read-only apart from those last three settings. Texts
+live in `api/bot-i18n.js` (17 languages incl. Azerbaijani, all with the same keys — a test enforces it;
+the app itself has no Azerbaijani pack yet). Telegram calls `POST /api/telegram/webhook`, proved by the
+`X-Telegram-Bot-Api-Secret-Token` header (derived from the bot token, no extra env). On boot, on an
+`https` `ORIGIN`, `bot.setup()` registers the webhook, the per-language command menu and descriptions
+(skipped when unchanged, via `meta.bot_setup`). Replies use the language chosen in the app, else
+Telegram's; notifications to a person go through `tgNotify` (translated, honours `/notifications off`).
+
 ### Production server (opengym.one)
 
 The maintainer's live instance: a VPS behind Cloudflare and nginx (Origin Certificate), Docker

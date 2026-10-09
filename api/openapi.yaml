@@ -2884,6 +2884,29 @@ paths:
         '401': { description: initData is not genuine or is stale }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/telegram/webhook:
+    post:
+      tags: [telegram]
+      operationId: telegramWebhook
+      summary: "Telegram bot updates (called by Telegram, not by the app)"
+      description: |
+        What people type to the bot (`/start`, `/plan`, `/today`, `/last`, `/progress`, `/weight`,
+        `/clients`, `/language`, `/reminders`, `/notifications`, `/help`) arrives here as a Telegram
+        update. The request must carry the header `X-Telegram-Bot-Api-Secret-Token` with the secret the
+        server gave Telegram when it registered the webhook (derived from the bot token); anything
+        else is a 403. Answered with 200 at once and handled afterwards; only private-chat text
+        messages are acted on. Replies come in the person's own language (the one chosen in the app,
+        else Telegram's). 404 without a bot token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '200': { description: Accepted. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/trainer/enable:
     post:
       tags: [trainer]

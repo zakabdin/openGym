@@ -538,13 +538,21 @@ export async function openStore({ url, schema, log = console } = {}) {
       const r = await q(
         `SELECT s.user_id, s.state->'reminder' AS reminder FROM user_state s
            WHERE s.state->'reminder'->>'on' = 'true'
-             AND EXISTS (SELECT 1 FROM push_subs p WHERE p.user_id = s.user_id)`
+             AND (EXISTS (SELECT 1 FROM push_subs p WHERE p.user_id = s.user_id)
+                  OR EXISTS (SELECT 1 FROM users u WHERE u.id = s.user_id AND u.tg_id IS NOT NULL
+                             AND coalesce(u.data->>'tgMute', '') = ''))`
       );
       return r.rows.map(x => ({ id: x.user_id, reminder: x.reminder }));
     }
   };
 
   /* ---------- trainer inbox ---------- */
+  // Small named facts the server keeps for itself (the bot setup it last sent, and the like).
+  const meta = {
+    async get(key) { return (await q('SELECT value FROM meta WHERE key = $1', [key])).rows[0]?.value ?? null; },
+    async set(key, value) { await q('INSERT INTO meta (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value = $2', [key, String(value)]); }
+  };
+
   const assignments = {
     async get(uid) {
       const r = await q('SELECT items FROM assignments WHERE user_id = $1', [uid]);
@@ -706,6 +714,6 @@ export async function openStore({ url, schema, log = console } = {}) {
 
   return {
     pool, q, tx, close, ping, register,
-    users, creds, subs, invites, deviceLinks, state, assignments, audit, admin
+    users, creds, subs, invites, deviceLinks, state, assignments, audit, admin, meta
   };
 }

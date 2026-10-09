@@ -1,7 +1,7 @@
 // #303: an instance-wide default language, and the browser's, apply only to a copy nobody has
 // picked a language for — never to an existing profile, whose `lang: 'en'` may be a choice.
 import { describe, expect, it } from 'vitest'
-import { matchLocale, autoLang } from './default-lang.js'
+import { matchLocale, autoLang, effectiveLang } from './default-lang.js'
 
 describe('matchLocale', () => {
   it('matches the full tag first, in any case or separator', () => {
@@ -30,5 +30,26 @@ describe('autoLang', () => {
     expect(autoLang(fresh, {}, ['nl-NL', 'de-DE'])).toBe('de')
     expect(autoLang(fresh, {}, ['nl-NL'])).toBe('en')
     expect(autoLang(fresh, { default_lang: 'xx' }, ['fr-FR'])).toBe('fr')
+  })
+})
+
+describe('a copy opened from Telegram', () => {
+  const withTelegram = (code, fn) => {
+    globalThis.window = globalThis.window || globalThis
+    const had = window.Telegram
+    window.Telegram = { WebApp: { initDataUnsafe: { user: { language_code: code } } } }
+    try { fn() } finally { if (had === undefined) delete window.Telegram; else window.Telegram = had }
+  }
+  it("starts in the person's Telegram language, ahead of the instance default and the browser", () => {
+    withTelegram('ru', () => {
+      expect(effectiveLang({ langAuto: true, lang: 'en' }, { default_lang: 'de' }, ['fr'])).toBe('ru')
+    })
+  })
+  it('maps regional tags and ignores a language the app does not have', () => {
+    withTelegram('pt-br', () => { expect(effectiveLang({ langAuto: true, lang: 'en' }, {}, [])).toBe('pt-BR') })
+    withTelegram('xx', () => { expect(effectiveLang({ langAuto: true, lang: 'en' }, { default_lang: 'de' }, [])).toBe('de') })
+  })
+  it('never overrides a language the person picked', () => {
+    withTelegram('ru', () => { expect(effectiveLang({ langAuto: false, lang: 'it' }, {}, ['fr'])).toBe('it') })
   })
 })

@@ -31,6 +31,8 @@ import {
 } from './passkeys-store.js';
 import { createDeviceLink, findDeviceLink, burnDeviceLink, dropDeviceLinks } from './device-link.js';
 import { verifyInitData, sendTelegramMessage } from './telegram.js';
+import { createBot, secretOk, pickLang } from './bot.js';
+import { tr as botText } from './bot-i18n.js';
 import {
   makeTrainerCode, trainerCodeFromStart, findTrainerByCode, clientsOf, isClientOf,
   cleanBundle, newAssignment, addAssignment, resolveAssignment
@@ -247,6 +249,16 @@ function pushEndpointError(raw) {
 // `deviceId` narrows the send to the subscriptions one browser registered (the rest-timer alert
 // belongs to the device that started the rest); a subscription stored without one — an older
 // client — still gets everything, as before.
+// A message from the bot to a person who has used the Telegram sign-in: in their language, and
+// only if they have not muted the bot (/notifications off). Best effort, like every bot message.
+async function tgNotify(u, key, ...args) {
+  if (!TELEGRAM_BOT_TOKEN || !u?.tg?.id || u.tgMute) return false;
+  const S = await store.state.get(u.id).catch(() => null);
+  return sendTelegramMessage(TELEGRAM_BOT_TOKEN, u.tg.id, botText(pickLang(S, u.tg.lang), key, ...args));
+}
+// The conversation side of the bot (commands like /plan), answered from this same database.
+const bot = TELEGRAM_BOT_TOKEN ? createBot({ store, token: TELEGRAM_BOT_TOKEN, appUrl: ORIGIN.replace(/\/+$/, '') }) : null;
+
 async function sendPush(userId, payload, deviceId) {
   let subs = await store.subs.ofUser(userId);
   if (deviceId && subs.some(s => s.deviceId === deviceId)) subs = subs.filter(s => s.deviceId === deviceId);
@@ -395,6 +407,7 @@ async function reminderTick() {
         if (!claimed || claimed === ABORT) continue;
         console.log('reminder firing', r.id, rid);
         sendPush(r.id, dayReminderPush(S.lang, routine));
+        tgNotify(user, 'reminder', routine?.name || '');
       } catch (e) {
         console.error('reminder tick', r.id, e);
       }
@@ -2016,6 +2029,15 @@ const routes = {
   // keyed on the Telegram id; a trainer's deep link (start_param t_<code>) binds the newcomer to
   // that trainer, and on an INVITE_ONLY instance counts as the invitation.
   ...(TELEGRAM_BOT_TOKEN ? {
+    // Telegram delivers what people type to the bot here. Proved by the secret header it was told
+    // to send (setWebhook in bot.js); answered at once, the work happens after.
+    'POST /api/telegram/webhook': async (req, res) => {
+      if (!secretOk(req.headers['x-telegram-bot-api-secret-token'], TELEGRAM_BOT_TOKEN)) return json(res, 403, { error: 'forbidden' });
+      const update = await readBody(req);
+      json(res, 200, { ok: true });
+      bot.handleUpdate(update).catch(e => console.error('bot update', e.message));
+    },
+
     'POST /api/auth/telegram': async (req, res) => {
       const body = await readBody(req);
       const tg = verifyInitData(text(body.initData), TELEGRAM_BOT_TOKEN);
@@ -2033,7 +2055,7 @@ const routes = {
         }
         user = {
           id: crypto.randomBytes(12).toString('base64url'), name: tg.name, created: new Date().toISOString(),
-          tg: { id: tg.id, ...(tg.username ? { username: tg.username } : {}) },
+          tg: { id: tg.id, ...(tg.username ? { username: tg.username } : {}), ...(tg.lang ? { lang: tg.lang } : {}) },
           ...(trainer ? { trainerId: trainer.id, invitedBy: 't:' + trainer.id } : {})
         };
         created = await store.users.insert(user);
@@ -2044,11 +2066,16 @@ const routes = {
         audit(req, 'auth.telegram.fail', { ok: false, user, msg: 'account-disabled' });
         return json(res, 403, { error: 'account disabled' });
       }
+      // The language Telegram reports can change; the bot answers in it until the person picks one.
+      if (!created && tg.lang && user.tg?.lang !== tg.lang) {
+        const fresh = await store.users.mutate(user.id, u => { u.tg = { ...u.tg, lang: tg.lang }; });
+        if (fresh && fresh !== ABORT) user = fresh;
+      }
       if (!created && trainer && !user.trainerId && trainer.id !== user.id) {
         const bound = await store.users.mutate(user.id, u => { if (u.trainerId) return ABORT; u.trainerId = trainer.id; });
         user = bound && bound !== ABORT ? bound : await store.users.byId(user.id);
       }
-      if (created && trainer) sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer.tg?.id, `${user.name} joined you on openGym.`);
+      if (created && trainer) tgNotify(trainer, 'joined', user.name);
       audit(req, created ? 'auth.telegram.register' : 'auth.telegram.ok', { user, msg: trainer ? 'trainer:' + trainer.id : undefined });
       json(res, 200, { token: makeSession(user), user: publicUser(user), created });
     }
@@ -2096,7 +2123,7 @@ const routes = {
     const user = await store.users.mutate(found.id, u => { u.trainerId = trainer.id; });
     if (!user) return json(res, 401, { error: 'not signed in' });
     audit(req, 'trainer.join', { user, target: trainer });
-    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer.tg?.id, `${user.name} joined you on openGym.`);
+    tgNotify(trainer, 'joined', user.name);
     json(res, 200, { user: publicUser(user), trainer: { id: trainer.id, name: trainer.name } });
   },
 
@@ -2170,7 +2197,7 @@ const routes = {
     const a = newAssignment({ from: user.id, fromName: user.name, note: text(body.note), bundle });
     await store.assignments.update(c.id, list => ({ items: addAssignment(list, a) }));
     audit(req, 'trainer.assign', { user, target: c, msg: a.id });
-    sendTelegramMessage(TELEGRAM_BOT_TOKEN, c.tg?.id, `${user.name} sent you a new plan on openGym. Open the app to start it.`);
+    tgNotify(c, 'planSent', user.name);
     json(res, 200, { id: a.id });
   },
 
@@ -2195,7 +2222,7 @@ const routes = {
     const done = a.hit;
     audit(req, done.status === 'accepted' ? 'trainer.inbox.accepted' : 'trainer.inbox.declined', { user, msg: done.id });
     const trainer = await store.users.byId(done.from);
-    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer?.tg?.id, `${user.name} ${done.status === 'accepted' ? 'started' : 'put off'} the plan you sent.`);
+    tgNotify(trainer, done.status === 'accepted' ? 'planStarted' : 'planDeclined', user.name);
     json(res, 200, { ok: true });
   },
 
@@ -2719,4 +2746,11 @@ server.headersTimeout = 60000;
 // port that was actually bound: with PORT=0 the OS picks one, and a caller that did not choose it
 // (the tests spawn the server that way, and so does anyone running two instances on one box) has
 // no other way to learn it.
-server.listen(PORT, () => console.log(`gym-api on :${server.address().port} (rpID=${RP_ID}, origin=${ORIGIN})`));
+server.listen(PORT, () => {
+  console.log(`gym-api on :${server.address().port} (rpID=${RP_ID}, origin=${ORIGIN})`);
+  // Webhook, command menu and description, once per change. Only on a public https address:
+  // Telegram cannot reach (or accept) anything else, so local dev and tests skip it.
+  if (bot && /^https:\/\//.test(ORIGIN)) {
+    setTimeout(() => bot.setup({ webhookUrl: ORIGIN.replace(/\/+$/, '') + '/api/telegram/webhook' }).catch(e => console.error('bot setup', e.message)), 3000).unref();
+  }
+});

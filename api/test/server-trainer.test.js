@@ -5,8 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import pg from 'pg';
 import { fileURLToPath } from 'node:url';
 import { boundPort, signInitData, testDb } from './helpers.mjs';
+import { webhookSecret } from '../bot.js';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BOT = '123456:TEST-token';
@@ -18,7 +20,7 @@ async function startServer(t, env = {}) {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', TELEGRAM_BOT_TOKEN: BOT, TELEGRAM_BOT_USERNAME: 'openGymBot', ...env }
   });
-  const h = { log: '', dataDir };
+  const h = { log: '', dataDir, db };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);
   t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
@@ -120,4 +122,32 @@ test('trainer sees only profiles that joined them; leaving ends access; INVITE_O
   const reset = await coach.api('POST', '/api/trainer/invite/reset');
   assert.notEqual(reset.body.code, code);
   assert.equal((await kid.api('POST', '/api/trainer/join', { code })).status, 400);
+});
+
+test('the bot webhook refuses anyone without the secret Telegram was told to send, and answers 200 to the real one', async t => {
+  const h = await startServer(t);
+  const post = (headers, body) => fetch(h.api + '/api/telegram/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
+  const update = { message: { text: '/help', chat: { id: 5, type: 'private' }, from: { id: 5, language_code: 'az' } } };
+  assert.equal((await post({}, update)).status, 403);
+  assert.equal((await post({ 'X-Telegram-Bot-Api-Secret-Token': 'guess' }, update)).status, 403);
+  assert.equal((await post({ 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(BOT) }, update)).status, 200);
+  // An update that is not a message at all is accepted and ignored, not an error.
+  assert.equal((await post({ 'X-Telegram-Bot-Api-Secret-Token': webhookSecret(BOT) }, { edited_message: {} })).status, 200);
+});
+
+test('a Telegram sign-in remembers the person\'s Telegram language and refreshes it', async t => {
+  const h = await startServer(t);
+  const mk = lang => signInitData({
+    auth_date: String(Math.floor(Date.now() / 1000)),
+    user: JSON.stringify({ id: 77, first_name: 'Lang', language_code: lang })
+  }, BOT);
+  assert.equal((await call(h)('POST', '/api/auth/telegram', { initData: mk('az') })).status, 200);
+  const langNow = async () => {
+    const c = new pg.Client({ connectionString: h.db.env.DATABASE_URL });
+    await c.connect();
+    try { await c.query(`SET search_path TO "${h.db.env.DB_SCHEMA}"`); return (await c.query("SELECT data->'tg'->>'lang' AS l FROM users WHERE tg_id = 77")).rows[0]?.l; } finally { await c.end(); }
+  };
+  assert.equal(await langNow(), 'az');
+  assert.equal((await call(h)('POST', '/api/auth/telegram', { initData: mk('ru') })).status, 200);
+  assert.equal(await langNow(), 'ru');
 });

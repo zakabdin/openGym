@@ -6,8 +6,9 @@
 // language picked in Settings since. Copies older than it carry no mark and are left exactly as
 // they are — including every existing profile whose `lang` is the old default.
 //
-// For a marked copy, the instance's DEFAULT_LANG (GET /api/config `default_lang`) comes first,
-// then the first of the browser's languages this app speaks, then English.
+// For a marked copy opened inside Telegram, the language Telegram says the person uses comes first
+// (they chose it for the whole app already). Then the instance's DEFAULT_LANG (GET /api/config
+// `default_lang`), then the first of the browser's languages this app speaks, then English.
 //
 // That answer is worked out where the language is used (effectiveLang) and never written back
 // into the state. It depends on the device — two phones of one profile can have browsers in two
@@ -29,10 +30,16 @@ export function matchLocale(tag) {
   return KEYS.includes(base) ? base : null
 }
 
+/** The language Telegram reports for the person opening the app from it, as one of LANGS' keys, or null. */
+export function telegramLang() {
+  try { return matchLocale(window.Telegram?.WebApp?.initDataUnsafe?.user?.language_code) } catch { return null }
+}
+
 /** The language a copy that never chose one should be in, or null for a copy that chose. */
 export function autoLang(S, config, navLangs = []) {
   if (!S || S.langAuto !== true) return null
-  return matchLocale(config?.default_lang)
+  return telegramLang()
+    || matchLocale(config?.default_lang)
     || (navLangs || []).map(matchLocale).find(Boolean)
     || 'en'
 }
