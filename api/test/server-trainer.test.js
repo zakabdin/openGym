@@ -6,21 +6,22 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort, signInitData } from './helpers.mjs';
+import { boundPort, signInitData, testDb } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BOT = '123456:TEST-token';
 
 async function startServer(t, env = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-trainer-'));
+  const db = await testDb('trainer');
   const child = spawn(process.execPath, ['server.js'], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', TELEGRAM_BOT_TOKEN: BOT, TELEGRAM_BOT_USERNAME: 'openGymBot', ...env }
+    env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', TELEGRAM_BOT_TOKEN: BOT, TELEGRAM_BOT_USERNAME: 'openGymBot', ...env }
   });
   const h = { log: '', dataDir };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);
-  t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
   h.api = `http://127.0.0.1:${await boundPort(child, () => h.log)}`;
   return h;
 }

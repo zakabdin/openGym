@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-openGym is a self-hosted gym & body-weight tracker PWA. Two containers (`api` + `web`) plus a
-`./data` folder the user owns — no third-party account, no telemetry. Passkey (WebAuthn) login,
+openGym is a self-hosted gym & body-weight tracker PWA. Three containers (`db` PostgreSQL + `api` + `web`) plus a
+`./data` folder and `./pgdata` the user owns — no third-party account, no telemetry. Passkey (WebAuthn) login,
 installable as a home-screen app, optional Capacitor shells for standalone Android/iOS builds.
 License: AGPL-3.0-or-later.
 
@@ -97,14 +97,17 @@ directly; the mirror is fast-forward only.
 
 Single file, no framework, plain `node:http`. Requests are dispatched through a `routes` object
 keyed by `'METHOD /path'` (e.g. `routes['GET /api/health']`) matched against `req.method + ' ' +
-url.pathname` — add a new endpoint by adding a key here. State is two flat JSON files under
-`DATA_DIR` (`db.json`: users/credentials/subscriptions/invites; `state-<uid>.json`: per-user
-workout data), written with a write-temp-then-rename atomic pattern (`atomicWrite`). Auth is
+url.pathname` — add a new endpoint by adding a key here. State is in PostgreSQL
+(`DATABASE_URL`), through `api/store.js`: users (a `data` jsonb record plus derived index columns),
+credentials, push subscriptions, invites, device links, `user_state` (per-user workout document,
+with its `rev`), `assignments` (trainer inbox) and `audit`. Nothing is held in memory between
+requests; a read-modify-write goes through `store.users.mutate` / `store.state.update`, which lock
+the row. Auth is
 WebAuthn passkeys (`@simplewebauthn/server`) plus a signed session cookie (HMAC'd with a
 `DATA_DIR/secret` generated on first boot) — no JWT/session-store dependency. Optional pieces
 gated by env vars: `ADMIN_UIDS` (admin dashboard), `INVITE_ONLY` (signup needs a code),
-`ALLOW_GUEST` (client-only guest mode never hits the server at all), plus a rotating
-`data/audit.log` (JSONL) for sign-in/admin events. Web Push (`web-push`, VAPID keys
+`ALLOW_GUEST` (client-only guest mode never hits the server at all), plus the `audit`
+table for sign-in/admin events. Web Push (`web-push`, VAPID keys
 auto-generated into `data/vapid.json`) drives rest-timer-over and day-reminder notifications.
 
 ### MCP server (`mcp/src`)

@@ -2,8 +2,9 @@
 media/img/
 media/gif/
 
-# Runtime data — users, passkeys, per-user state, session secret
+# Runtime data — session secret, push keys, uploads; PostgreSQL files
 data/
+pgdata/
 
 # Local config
 .env

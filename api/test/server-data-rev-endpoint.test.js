@@ -5,7 +5,7 @@
 // there is a window of one process start, and the kernel hands the same ephemeral port back out
 // inside it (measured: 8 repeats in 400 open/close rounds on this box). Eight test files spawn
 // servers this way at once, so the loser of that race got EADDRINUSE and this test then talked to
-// another file's server — a db.json without its user, and `{"error":"not signed in"}` where the
+// another file's server — a database without its user, and `{"error":"not signed in"}` where the
 // revision should have been. Once at baseline, never again on a re-run.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { boundPort, testDb } from './helpers.mjs';
 
 const API = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const SECRET = 'test-secret-rev-endpoint';
@@ -25,9 +25,10 @@ const cookie = () => { const p = `${uid}:${Date.now() + 86400000}:0`; return `gy
 test('GET /api/data/rev tracks PUT /api/data', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-rev-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
-  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [{ id: uid, name: 'R', created: new Date().toISOString() }], creds: [], subs: [], invites: [] }));
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
-  t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const db = await testDb('drevep');
+  await db.seed({ users: [{ id: uid, name: 'R', created: new Date().toISOString() }] });
+  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
+  t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
 
   // The boot line carries the port the listener actually bound, so there is no window in which
   // anything else could be holding it — the server is listening by the time it is printed.

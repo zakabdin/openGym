@@ -10,11 +10,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { tempData, writeState, sampleState } from './helpers.mjs';
+import { tempData, sampleState } from './helpers.mjs';
+import { makeStates } from './helpers-coach.mjs';
 
 const DIR = tempData();
 const cfg = await import('../coach/config.js');
 const jobs = await import('../coach/jobs.js');
+const writeState = makeStates(jobs);
 const { coachRoutes } = await import('../coach/routes.js');
 const { forcePrivilegeVerdict } = await import('../coach/adapters/spawn.js');
 forcePrivilegeVerdict({ ok: true, dropped: false, why: 'pinned by the test suite' });
@@ -89,7 +91,7 @@ async function runReview(provider, key, uid) {
   r = await call('POST /api/admin/coach/config', { model: r.body.models[0] });
   assert.equal(r.status, 200);
   writeState(DIR, uid, sampleState());
-  jobs.enqueue(uid, { kind: 'review' });
+  await jobs.enqueue(uid, { kind: 'review' });
   await settle(uid);
   return jobs.readUser(uid);
 }
@@ -112,7 +114,7 @@ test('Anthropic: the pasted key travels as x-api-key, the rules are the cached s
   assert.equal(rec.pending.changes[0].type, 'sets');
   // Every profile may use an API key: a second profile is not refused.
   writeState(DIR, 'u-anthropic-2', sampleState());
-  assert.doesNotThrow(() => jobs.enqueue('u-anthropic-2', { kind: 'review' }));
+  await assert.doesNotReject(() => jobs.enqueue('u-anthropic-2', { kind: 'review' }));
   await settle('u-anthropic-2');
   assert.equal(jobs.readUser('u-anthropic-2').history.at(-1).outcome, 'ready');
 });

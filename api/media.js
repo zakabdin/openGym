@@ -16,7 +16,7 @@
  * - It never buffers an upload. The production API runs with a 128 MB memory limit and a video
  *   may be 40 MB, so bytes go from the socket through a hash to a temp file and nowhere else.
  * - It never deletes because something is missing. A state file that cannot be read, a user
- *   that is not in db.json (a db.json that failed to parse boots with no users at all) and an
+ *   that is not in the database (an empty database has no users at all) and an
  *   unreadable .gc.json all mean "keep everything". Blobs only go when the profile's own
  *   readable state has not referenced them for the whole grace period, or when the profile
  *   itself is deleted. Devices that still hold a blob the server dropped upload it again.
@@ -493,9 +493,9 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
     for (const h of Object.keys(marks)) if (!e.hashes.has(h)) { delete marks[h]; changed = true; }
     return changed;
   }
-  function stateOf(uid) {
+  async function stateOf(uid) {
     let S = null;
-    try { S = readState(uid); } catch { S = null; }
+    try { S = await readState(uid); } catch { S = null; }
     return S && typeof S === 'object' && !Array.isArray(S) ? S : null;
   }
 
@@ -512,11 +512,11 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
     return changed;
   }
 
-  function sweep(uid, { graceMs = L.gcGraceDays * DAY } = {}) {
+  async function sweep(uid, { graceMs = L.gcGraceDays * DAY } = {}) {
     const e = entry(uid);
     const res = { removed: 0, freedBytes: 0, skipped: false };
     if (!e.hashes.size) return res;
-    const S = stateOf(uid);
+    const S = await stateOf(uid);
     if (!S) { res.skipped = true; return res; }   // never infer anything from a missing state
     const refs = referencedHashes(S);
     const marks = readMarks(e);
@@ -566,8 +566,8 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
     catch { return []; }
   };
 
-  function markIfUnreferenced(uid, e, hash) {
-    const S = stateOf(uid);
+  async function markIfUnreferenced(uid, e, hash) {
+    const S = await stateOf(uid);
     if (S && referencedHashes(S).has(hash)) return;
     const marks = readMarks(e);
     marks[hash] = now();
@@ -619,7 +619,7 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
       if (quotaBytes && e.bytes + e.reserved + need > quotaBytes) {
         // Space the person already let go of may still be sitting out its grace period; under
         // pressure it gets an hour instead of two weeks.
-        try { sweep(uid, { graceMs: HOUR }); } catch (err) { log.error('media: quota sweep failed for', e.id, err.message); }
+        try { await sweep(uid, { graceMs: HOUR }); } catch (err) { log.error('media: quota sweep failed for', e.id, err.message); }
         if (e.bytes + e.reserved + need > quotaBytes) {
           throw new MediaError(413, 'media-quota', { usedMB: round1(e.bytes / MB), quotaMB: L.quotaMB });
         }
@@ -662,7 +662,7 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
       e.count++;
       // Unreferenced until the state push that names it arrives; the mark is what lets the
       // grace protect it until then, and what lets it go if that push never comes.
-      try { markIfUnreferenced(uid, e, hash); } catch (err) { log.error('media: could not mark', e.id, hash, err.message); }
+      try { await markIfUnreferenced(uid, e, hash); } catch (err) { log.error('media: could not mark', e.id, hash, err.message); }
       return { status: 201, body: { ok: true, hash, mime: sn.mime, size: got.size, existed: false } };
     } catch (err) {
       // Whatever went wrong on this side — a refusal, or the disk — the rest of the body is
@@ -706,9 +706,9 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
     noteState,
     sweep,
     /** The hourly pass. Only profiles in `uids` are swept, and only when their state reads;
-     *  a folder that belongs to nobody in db.json is left alone and said so, once per process —
+     *  a folder that belongs to nobody in the database is left alone and said so, once per process —
      *  only an admin deleting the profile removes a folder. */
-    sweepAll({ uids = [], graceMs } = {}) {
+    async sweepAll({ uids = [], graceMs } = {}) {
       const known = new Map();
       for (const u of uids) { try { known.set(safe(u), u); } catch { /* unusable id */ } }
       const out = { swept: 0, removed: 0, freedBytes: 0, skipped: 0, orphans: 0, tmp: 0 };
@@ -719,12 +719,12 @@ export function createMediaStore({ dir, limits, now = Date.now, readState = () =
           out.orphans++;
           if (!orphansLogged.has(name)) {
             orphansLogged.add(name);
-            log.warn(`media: uploads/${name} belongs to no profile in db.json — left alone`);
+            log.warn(`media: uploads/${name} belongs to no profile in the database — left alone`);
           }
           continue;
         }
         try {
-          const r = sweep(uid, graceMs === undefined ? {} : { graceMs });
+          const r = await sweep(uid, graceMs === undefined ? {} : { graceMs });
           if (r.skipped) out.skipped++; else out.swept++;
           out.removed += r.removed;
           out.freedBytes += r.freedBytes;

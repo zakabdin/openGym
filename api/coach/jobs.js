@@ -82,11 +82,15 @@ export function clearUser(uid) {
   invalidateCohort();
 }
 
-/** Every profile with a state file — the population a cohort is drawn from. */
+/* Where a profile's training document comes from. The training documents live in the database
+   (api/store.js); server.js hands this module the two questions it needs, so it never imports the
+   store itself and the tests can answer from a plain object. */
+let stateSource = { read: async () => null, ids: async () => [] };
+export function setStateSource(src) { stateSource = src; }
+
+/** Every profile with a training document — the population a cohort is drawn from. */
 export function listUserIds() {
-  try {
-    return fs.readdirSync(DATA).filter(f => /^state-[a-zA-Z0-9_-]+\.json$/.test(f)).map(f => f.slice(6, -5));
-  } catch { return []; }
+  return stateSource.ids().catch(() => []);
 }
 
 /* ---------- "compare with others" opt-in ----------
@@ -101,8 +105,7 @@ export function setShare(uid, share) {
 }
 
 export function readState(uid) {
-  try { return JSON.parse(fs.readFileSync(path.join(DATA, 'state-' + safe(uid) + '.json'), 'utf8')); }
-  catch { return null; }
+  return Promise.resolve(stateSource.read(uid)).catch(() => null);
 }
 
 /* ---------- caps ---------- */
@@ -194,11 +197,13 @@ export function clampMessage(text) {
  * Enqueue a job. Throws CoachError with a code the routes layer maps to an HTTP status:
  * `off`, `busy`, `cap`, `consent`.
  */
-export function enqueue(uid, opts) {
+export async function enqueue(uid, opts) {
+  // The only wait is this one, before any check: everything after it — the busy check and the
+  // `inflight.add` — runs without yielding, so two requests cannot both pass "not busy".
+  const S = await readState(uid);
   if (!cfgStore.isEnabled() || !cfgStore.isConnected()) throw new CoachError('off', 'the Coach is not set up on this instance');
   if (inflight.has(uid)) throw new CoachError('busy', 'the Coach is already thinking about your training');
 
-  const S = readState(uid);
   // Consent is enforced here, server-side, not by the screen that collects it: a UI-only gate
   // is not a gate (FR-08/13).
   if (!S?.coach?.consent?.agreedAt) throw new CoachError('consent', 'the Coach needs your go-ahead first');
@@ -306,7 +311,7 @@ export function setProposalHook(fn) { onProposal = fn; }
 async function execute(job) {
   patchUser(job.uid, { current: { id: job.id, kind: job.kind, state: 'running', startedAt: job.startedAt } });
 
-  const S = readState(job.uid);
+  const S = await readState(job.uid);
   if (!S) return finish(job, { outcome: 'failed', errorClass: 'nostate' });
   // Checked again here, not only at enqueue: a job can wait behind two others, and consent
   // withdrawn or the Coach switched off in the meantime means no payload leaves for it.
@@ -335,7 +340,7 @@ async function execute(job) {
     lang: job.lang || (S.langAuto === true ? payloadLib.langTag(process.env.DEFAULT_LANG) : null),
     // The room's medians ride along on a review or a debrief when the admin allows it and
     // this person opted in; null otherwise, and the payload then carries no `cohort` at all.
-    cohort: (job.kind === 'review' || job.kind === 'debrief') ? cohortForPayload(job.uid) : null
+    cohort: (job.kind === 'review' || job.kind === 'debrief') ? await cohortForPayload(job.uid) : null
   });
   // The payload is paid for with the instance's key, and it is built from state the client
   // wrote. The builder bounds each field; a payload that is still bigger than any real training

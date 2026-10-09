@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { boundPort, testDb } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRET = crypto.randomBytes(32).toString('hex');
@@ -27,18 +27,17 @@ function mintSession(uid) {
 async function startServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-bodyerr-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
-  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
-    users: [{ id: 'u_body_1', name: 'One', created: new Date().toISOString() }], creds: [], subs: [], invites: []
-  }));
+  const db = await testDb('bodyerr');
+  await db.seed({ users: [{ id: 'u_body_1', name: 'One', created: new Date().toISOString() }] });
   const child = spawn(process.execPath, ['server.js'], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' }
+    env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' }
   });
-  const h = { api: '', port: 0, dataDir, log: '', exited: null };
+  const h = { api: '', port: 0, dataDir, db, log: '', exited: null };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);
   child.on('exit', (code, signal) => { h.exited = { code, signal }; });
-  t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
   // The boot line carries the port the listener bound, so it is both the address and the
   // readiness signal — see boundPort in helpers.mjs for why the test does not pick one.
   h.port = await boundPort(child, () => h.log);
@@ -81,6 +80,6 @@ test('a client that hangs up mid-body costs one log line and no stack', async t 
   assert.equal(h.exited, null);
   assert.deepEqual(stackLines(h.log), [], `nothing to trace:\n${h.log}`);
   assert.equal((h.log.match(/client went away mid-body/g) || []).length, aborts, `one line each:\n${h.log}`);
-  assert.equal(fs.existsSync(path.join(h.dataDir, 'state-u_body_1.json')), false, 'and nothing was written');
+  assert.equal(await h.db.state('u_body_1'), null, 'and nothing was written');
   assert.equal((await fetch(`${h.api}/api/health`)).status, 200);
 });

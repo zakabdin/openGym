@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { boundPort, testDb } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRET = crypto.randomBytes(32).toString('hex');
@@ -27,17 +27,16 @@ const anon = { 'Content-Type': 'application/json' };
 async function startServer(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-bad-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
-  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
-    users: [{ id: UID, name: 'One', created: new Date().toISOString() }], creds: [], subs: [], invites: []
-  }));
+  const db = await testDb('badin');
+  await db.seed({ users: [{ id: UID, name: 'One', created: new Date().toISOString() }] });
   const child = spawn(process.execPath, ['server.js'], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' }
+    env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' }
   });
-  const h = { api: '', log: '', dataDir };
+  const h = { api: '', log: '', dataDir, db };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);
-  t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
   // The boot line carries the port the listener bound, so it is both the address and the
   // readiness signal — see boundPort in helpers.mjs for why the test does not pick one.
   h.port = await boundPort(child, () => h.log);
@@ -107,7 +106,7 @@ test('a body over the 5 MiB cap is a 413 that every client gets to read, and not
   let r = await status(h, 'PUT', '/api/data', authed, big);
   assert.equal(r.status, 413);
   assert.equal(r.body.error, 'body too large');
-  assert.equal(fs.existsSync(path.join(h.dataDir, `state-${UID}.json`)), false, 'nothing was written');
+  assert.equal(await h.db.state(UID), null, 'nothing was written');
   const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
   t.after(() => agent.destroy());
   for (let i = 0; i < 3; i++) {
@@ -126,10 +125,10 @@ test('a body over the 5 MiB cap is a 413 that every client gets to read, and not
   assert.equal(h.stackFrames(), 0, `stack traces in the log:\n${h.log}`);
 });
 
-test('PUT /api/data: an array is not a document, and null entries never reach the disk', async t => {
+test('PUT /api/data: an array is not a document, and null entries never reach the database', async t => {
   const h = await startServer(t);
   const put = body => status(h, 'PUT', '/api/data', authed, JSON.stringify(body));
-  const onDisk = () => JSON.parse(fs.readFileSync(path.join(h.dataDir, `state-${UID}.json`), 'utf8'));
+  const onDisk = () => h.db.state(UID);
 
   let r = await put({ state: { _ts: 100, workouts: [{ id: 'w1', d: '2026-09-01' }], routines: [], unit: 'kg' }, baseRev: 0 });
   assert.equal(r.status, 200);
@@ -141,8 +140,8 @@ test('PUT /api/data: an array is not a document, and null entries never reach th
   r = await put({ state: [], baseRev: 1 });
   assert.equal(r.status, 400);
   assert.equal(r.body.error, 'invalid state');
-  assert.equal(onDisk()._rev, 1);
-  assert.deepEqual(onDisk().workouts.map(w => w.id), ['w1']);
+  assert.equal((await onDisk())._rev, 1);
+  assert.deepEqual((await onDisk()).workouts.map(w => w.id), ['w1']);
   r = await status(h, 'GET', '/api/data/rev', authed);
   assert.deepEqual(r.body, { rev: 1 });
 
@@ -152,12 +151,12 @@ test('PUT /api/data: an array is not a document, and null entries never reach th
   r = await put({ state: { workouts: [null, { id: 'w2', d: '2026-09-02' }, 7, 'x', [], { id: 'w3', d: '2026-09-03' }], routines: [null, { id: 'r1', name: 'A', ex: [] }] }, baseRev: 1 });
   assert.equal(r.status, 200);
   assert.equal(r.body.rev, 2);
-  assert.deepEqual(onDisk().workouts.map(w => w.id), ['w2', 'w3']);
-  assert.deepEqual(onDisk().routines.map(x => x.id), ['r1']);
+  assert.deepEqual((await onDisk()).workouts.map(w => w.id), ['w2', 'w3']);
+  assert.deepEqual((await onDisk()).routines.map(x => x.id), ['r1']);
   // Absent lists stay absent — every client fills its own defaults.
   r = await put({ state: { unit: 'kg' }, baseRev: 2 });
   assert.equal(r.status, 200);
-  assert.equal('workouts' in onDisk(), false);
+  assert.equal('workouts' in (await onDisk()), false);
   assert.equal(h.stackFrames(), 0, `stack traces in the log:\n${h.log}`);
 });
 

@@ -13,7 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { boundPort, testDb } from './helpers.mjs';
 import * as M from './media-samples.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -34,22 +34,22 @@ const refState = (...hashes) => ({
 async function start(t, env = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-media-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
-  fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
+  const db = await testDb('media');
+  await db.seed({
     users: [
       { id: U1, name: 'Ana', created: new Date().toISOString() },
       { id: U2, name: 'Bo', created: new Date().toISOString() },
       { id: ADMIN, name: 'Admin', created: new Date().toISOString(), admin: true }
-    ],
-    creds: [], subs: [], invites: []
-  }));
+    ]
+  });
   const child = spawn(process.execPath, ['server.js'], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN, RP_ID: 'localhost', MEDIA_MIN_FREE_MB: '1', ...env }
+    env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN, RP_ID: 'localhost', MEDIA_MIN_FREE_MB: '1', ...env }
   });
-  const h = { log: '', dataDir, uploads: path.join(dataDir, 'uploads') };
+  const h = { log: '', dataDir, db, uploads: path.join(dataDir, 'uploads') };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);
-  t.after(() => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  t.after(async () => { child.kill('SIGKILL'); fs.rmSync(dataDir, { recursive: true, force: true }); await db.drop(); });
   h.port = await boundPort(child, () => h.log);
   h.api = `http://127.0.0.1:${h.port}`;
   h.put = (bytes, { uid = U1, declare = 'image/jpeg', hash = M.sha(bytes), headers } = {}) =>
@@ -290,7 +290,8 @@ test('the hourly budget answers 429 with Retry-After, and is recorded once', asy
     assert.deepEqual(await r.json(), { error: 'too many uploads — try again later', code: 'locked', retryAfter: retry });
   }
   assert.equal((await h.put(M.jpeg(), { uid: U2 })).status, 201, 'per profile, not per instance');
-  const audit = fs.readFileSync(path.join(h.dataDir, 'audit.log'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  await sleep(150);   // audit rows are written a moment after the response
+  const audit = await h.db.audit();
   assert.equal(audit.filter(e => e.ev === 'media.throttled').length, 1);
 });
 
@@ -348,21 +349,21 @@ test('a state push starts the grace of a dropped file, and /sweep removes it at 
   assert.deepEqual(await r.json(), { removed: 1, freedBytes: 2000, usage: { bytes: 1000, count: 1, quotaBytes: 200 * 1048576 } });
   assert.equal((await h.get(M.sha(b))).status, 404);
   assert.equal((await h.get(M.sha(a))).status, 200);
-  const audit = fs.readFileSync(path.join(h.dataDir, 'audit.log'), 'utf8');
-  assert.match(audit, /"ev":"media\.sweep"/);
+  await sleep(150);   // audit rows are written a moment after the response
+  assert.ok((await h.db.audit()).some(e => e.ev === 'media.sweep'));
 });
 
 test('/sweep with a state that does not parse removes nothing', async t => {
   const h = await start(t);
   const a = M.jpeg();
   await h.put(a, { uid: U2 });
-  fs.writeFileSync(path.join(h.dataDir, `state-${U2}.json`), '{"customEx": [tor');
+  await h.db.setState(U2, []);   // a stored document that is not a usable state (JSONB cannot hold unparsable text)
   const r = await h.post('/api/media/sweep', {}, U2);
   assert.equal(r.status, 200);
   assert.equal((await r.json()).removed, 0);
   assert.deepEqual(h.files(U2), [`${M.sha(a)}.jpg`]);
-  // And with no state file at all.
-  fs.unlinkSync(path.join(h.dataDir, `state-${U2}.json`));
+  // And with no state stored at all.
+  await h.db.store.q('DELETE FROM user_state WHERE user_id = $1', [U2]);
   assert.equal((await (await h.post('/api/media/sweep', {}, U2)).json()).removed, 0);
   assert.deepEqual(h.files(U2), [`${M.sha(a)}.jpg`]);
 });
@@ -386,7 +387,7 @@ test('PUT /api/data still answers 200 when the media bookkeeping fails', async t
   assert.equal(r.status, 200);
   assert.equal((await r.json()).ok, true);
   assert.match(h.log, /media noteState/);
-  const saved = JSON.parse(fs.readFileSync(path.join(h.dataDir, `state-${U1}.json`), 'utf8'));
+  const saved = await h.db.state(U1);
   assert.equal(saved._rev, 1, 'the state itself was saved');
 });
 
@@ -427,12 +428,13 @@ test('/api/config carries the caps; MEDIA_UPLOADS=0 takes the block and every ro
 test('boot removes the temp files of uploads the previous process was receiving', async t => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-media-boot-'));
   t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  const db = await testDb('mediaboot');
   const tmp = path.join(dataDir, 'uploads', U1, '.tmp');
   fs.mkdirSync(tmp, { recursive: true });
   fs.writeFileSync(path.join(tmp, 'half-an-upload'), 'x');
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET);
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PORT: '0', DATA_DIR: dataDir } });
-  t.after(() => child.kill('SIGKILL'));
+  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir } });
+  t.after(async () => { child.kill('SIGKILL'); await db.drop(); });
   await boundPort(child);
   assert.deepEqual(fs.readdirSync(tmp), []);
 });

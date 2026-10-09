@@ -35,6 +35,25 @@ services:
         fi
     restart: "no"
 
+  # PostgreSQL: everything the API stores about people — accounts, passkeys, push subscriptions,
+  # invites, training documents, the trainer inbox and the audit log. Reachable only by the api
+  # container (no published port). The files are in ./pgdata — BACK THIS UP, or take a dump:
+  #     docker compose exec db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > opengym.sql
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-opengym}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-opengym}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # Passkey auth + per-user data (Node, no framework).
   # Built from source (docker compose up --build); no prebuilt registry images.
   api:
@@ -48,7 +67,11 @@ services:
       target: ${API_TARGET:-default}
     restart: unless-stopped
     env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
+      # DATABASE_URL comes from .env (see .env.example); it must point at the `db` service above.
       # The port the API listens on. web proxies to this same value, so the two
       # cannot drift — change it in .env and both follow.
       - PORT=${PORT:-3000}
@@ -58,8 +81,8 @@ services:
       # requests by those headers instead of lumping everyone in as "the web container".
       - TRUST_PROXY=${TRUST_PROXY:-1}
     volumes:
-      - ./data:/data         # users, passkeys, per-user state, session secret — BACK THIS UP
-                             # (and uploads/: the photos and videos of custom exercises)
+      - ./data:/data         # session secret, push keys, uploads/ (photos and videos of custom
+                             # exercises) — BACK THIS UP, together with ./pgdata
       # Provider credential cache (Codex). A sibling of ./data on purpose: the documented backup
       # is `tar czf … data/`, and a live refresh token must not end up inside it. Nothing here
       # needs backing up — if you lose it, sign the provider in again.

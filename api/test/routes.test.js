@@ -164,7 +164,9 @@ test('the disclosure names the provider and the same five categories the payload
 test('a debrief is enqueued as its own kind, and the cohort routes gate on the admin switch and the opt-in', async () => {
   fresh({ community: false });
   const jobs = await import('../coach/jobs.js');
-  const { writeState, sampleState } = await import('./helpers.mjs');
+  const { sampleState } = await import('./helpers.mjs');
+  const { makeStates } = await import('./helpers-coach.mjs');
+  const writeState = makeStates(jobs);
   const { forcePrivilegeVerdict } = await import('../coach/adapters/spawn.js');
   forcePrivilegeVerdict({ ok: true, dropped: false, why: 'pinned by the test suite' });
   writeState(process.env.DATA_DIR, 'admin-1', sampleState());

@@ -235,6 +235,14 @@ test:mcp:
 test:api:
   extends: .node
   stage: test
+  # The api stores everything in PostgreSQL; each test file makes a schema of its own in this one.
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_PASSWORD: test
+    POSTGRES_DB: opengym
+    TEST_DATABASE_URL: postgres://postgres:test@postgres:5432/opengym
   cache:
     key:
       files:
@@ -418,7 +426,9 @@ build:api-check:
     - |
       set -eu
       docker network create api-net
-      docker run -d --name api-default --network api-net -e DATA_DIR=/data opengym-api:default
+      docker run -d --name api-db --network api-net -e POSTGRES_PASSWORD=test -e POSTGRES_DB=opengym postgres:16-alpine
+      for i in $(seq 1 30); do docker exec api-db pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+      docker run -d --name api-default --network api-net -e DATA_DIR=/data -e DATABASE_URL=postgres://postgres:test@api-db:5432/opengym opengym-api:default
       for i in $(seq 1 30); do
         docker run --rm --network api-net curlimages/curl:8.12.1 -fsS http://api-default:3000/api/config >/dev/null 2>&1 && break
         sleep 1
@@ -426,7 +436,7 @@ build:api-check:
       docker run --rm --network api-net curlimages/curl:8.12.1 -fsS http://api-default:3000/api/config | tee /dev/stderr | grep -q '"invite_only"'
       docker run --rm opengym-api:default node -e \
         'import("@anthropic-ai/claude-agent-sdk").then(()=>{console.error("AI runtime present in the default image");process.exit(1)},()=>process.exit(0))'
-      docker rm -f api-default
+      docker rm -f api-default api-db
       docker network rm api-net
     # --- the coach image carries a runnable Agent SDK, Codex and its sandbox
     - |
