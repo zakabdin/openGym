@@ -37,6 +37,7 @@ import {
 } from './trainer.js';
 import { createMediaStore, mediaLimits, mediaConfig, MediaError, HASH_RE } from './media.js';
 import { openStore, ABORT } from './store.js';
+import { createAdminSite } from './admin-site.js';
 
 const PORT = +(process.env.PORT || 3000);
 const DATA = process.env.DATA_DIR || '/data';
@@ -47,6 +48,10 @@ const RP_NAME = process.env.RP_NAME || 'openGym';
 // code the admin generates. Both default off so a fresh self-hosted instance stays open.
 const ADMIN_UIDS = (process.env.ADMIN_UIDS || '').split(',').map(s => s.trim()).filter(Boolean);
 const INVITE_ONLY = /^(1|true|yes|on)$/i.test(process.env.INVITE_ONLY || '');
+// The operator's own site at /admin (admin-site.js): signs in with these two, and does not exist
+// while either is unset. Separate from ADMIN_UIDS, which makes profiles admins inside the app.
+const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || '').trim();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 // Guest mode ("Continue without account") keeps everything in the browser and never touches this
 // server — but on an instance meant for a known set of people, an entrance nobody can walk back
 // out of is still the wrong front door (#42). Default ON, so existing instances are unchanged;
@@ -2553,6 +2558,31 @@ const routes = {
   ...(MEDIA_ON ? mediaRoutes : {})
 };
 
+/* ---------- the operator's admin site (/admin) ---------- */
+// The actions are the app's own, so this site and the in-app dashboard remove exactly the same things.
+const adminSite = createAdminSite({
+  store, secret: SECRET, username: ADMIN_USERNAME, password: ADMIN_PASSWORD, secure: !!SECURE,
+  readBody, audit, limitAddress,
+  originOk: req => csrfOk(req, 'POST /admin'),
+  actions: {
+    async setDisabled(id, disabled) {
+      const u = await store.users.mutate(id, x => { x.disabled = disabled; });
+      if (!u) return null;
+      if (u.disabled) { presence.delete(u.id); await dropDeviceLinks(store, u.id); }
+      return u;
+    },
+    async remove(id) {
+      const u = await store.users.byId(id);
+      if (!u) return null;
+      await store.users.remove(u.id);
+      presence.delete(u.id);
+      try { coachConfig.clearProfileAuth(u.id); } catch { /* nothing stored */ }
+      try { MEDIA.removeUser(u.id); } catch (e) { console.error('media: could not remove uploads of', u.id, e.message); }
+      return u;
+    }
+  }
+});
+
 /* ---------- Coach: boot recovery, notifications, scheduled reviews ---------- */
 // A job that was running when the process died is not coming back; say so rather than leaving
 // a spinner that never resolves.
@@ -2619,6 +2649,18 @@ const server = http.createServer(async (req, res) => {
   // above stays a plain lookup, and so csrfOk and the catch-all see one name for every file.
   const mm = /^\/api\/media\/([0-9a-f]{64})$/.exec(url.pathname);
   if (mm) { key = req.method + ' /api/media/{hash}'; req.mediaHash = mm[1]; }
+  if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+    // Same origin as the app, but never a cross-origin API: no CORS answer for it.
+    res.removeHeader('Access-Control-Allow-Origin'); res.removeHeader('Vary');
+    try { await adminSite.handle(req, res, url); }
+    catch (e) {
+      if (e?.clientGone) return;
+      if (e instanceof HttpError) { if (!res.headersSent) json(res, e.status, { error: e.message }); return; }
+      console.error('admin', req.method, url.pathname, e);
+      if (!res.headersSent) json(res, 500, { error: 'server error' });
+    }
+    return;
+  }
   const handler = routes[key];
   if (!handler) return json(res, 404, { error: 'not found' });
   if (!csrfOk(req, key)) {

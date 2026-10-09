@@ -56,6 +56,22 @@ server {
         proxy_set_header CF-Connecting-IP "${CF_CONNECTING_IP}";
     }
 
+    # The operator's admin site (api/admin-site.js). Same upstream and headers as /api; it answers 404
+    # on its own while ADMIN_USERNAME / ADMIN_PASSWORD are unset.
+    location ^~ ${BASE_PATH}/admin {
+        client_max_body_size 1m;
+        resolver ${RESOLVER} valid=10s ipv6=off;
+        set $api_upstream http://${BACKEND}:${PORT};
+        proxy_pass $api_upstream;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header CF-Connecting-IP "${CF_CONNECTING_IP}";
+        add_header X-Content-Type-Options "nosniff" always;
+    }
+
     # Photos and videos of custom exercises (PUT and GET under api/media/). Nginx picks the
     # longest matching prefix, so this block takes those requests from the one above wherever it
     # sits. Same upstream, resolver and headers; what differs is the body. A video may be tens of

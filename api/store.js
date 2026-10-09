@@ -610,11 +610,100 @@ export async function openStore({ url, schema, log = console } = {}) {
     }
   };
 
+  /* ---------- admin site (read side) ---------- */
+  // Numbers read out of the training document in SQL, so a list of every profile never loads a
+  // document. A `workouts` that is not an array (a document from before the entry filter) counts
+  // as none, and an entry that is not an object has no date.
+  const OBJS = `jsonb_path_query_array(CASE WHEN jsonb_typeof(s.state->'workouts') = 'array' THEN s.state->'workouts' ELSE '[]'::jsonb END, '$[*] ? (@.type() == "object")')`;
+  const WORKOUTS_N = `jsonb_array_length(${OBJS})`;
+  const LAST_WORKOUT = `(${OBJS})->-1->>'d'`;
+  const adminOut = r => ({
+    id: r.id, name: r.name, created: r.created, disabled: r.disabled, role: r.role,
+    telegramId: r.tg_id == null ? null : Number(r.tg_id), username: r.username || null,
+    trainerId: r.trainer_id, trainerName: r.trainer_name || null, clients: +r.clients || 0,
+    workouts: +r.workouts || 0, lastWorkout: r.last_workout || null,
+    lastSync: Math.max(+r.ts || 0, +r.last_pull || 0) || null, push: +r.push || 0, rev: r.rev == null ? 0 : +r.rev
+  });
+  const adminSelect = `
+    SELECT u.id, u.name, u.created, u.disabled, u.role, u.tg_id, u.data->'tg'->>'username' AS username,
+           u.trainer_id, t.name AS trainer_name,
+           (SELECT count(*) FROM users c WHERE c.trainer_id = u.id) AS clients,
+           ${WORKOUTS_N} AS workouts, ${LAST_WORKOUT} AS last_workout,
+           CASE WHEN jsonb_typeof(s.state->'_ts') = 'number' THEN (s.state->>'_ts')::bigint END AS ts,
+           u.last_pull, (SELECT count(*) FROM push_subs p WHERE p.user_id = u.id) AS push, s.rev
+      FROM users u LEFT JOIN user_state s ON s.user_id = u.id LEFT JOIN users t ON t.id = u.trainer_id`;
+  const adminWhere = (p, { q, role }) => {
+    const w = [];
+    if (q) {
+      p.push('%' + q.replace(/[\\%_]/g, '\\$&') + '%');
+      w.push(`(u.name ILIKE $${p.length} OR u.data->'tg'->>'username' ILIKE $${p.length} OR u.id = $${p.length + 1} OR u.tg_id::text = $${p.length + 1})`);
+      p.push(q);
+    }
+    if (role === 'trainer') w.push(`u.role = 'trainer'`);
+    else if (role === 'client') w.push('u.trainer_id IS NOT NULL');
+    else if (role === 'disabled') w.push('u.disabled');
+    return w.length ? 'WHERE ' + w.join(' AND ') : '';
+  };
+  const admin = {
+    async users({ q = '', role = '', page = 1, limit = 20 } = {}) {
+      const p = [];
+      const where = adminWhere(p, { q, role });
+      const total = +(await pool.query(`SELECT count(*)::int AS n FROM users u ${where}`, p)).rows[0].n;
+      const rows = (await pool.query(
+        `${adminSelect} ${where} ORDER BY u.seq DESC LIMIT $${p.length + 1} OFFSET $${p.length + 2}`,
+        [...p, limit, (page - 1) * limit]
+      )).rows.map(adminOut);
+      return { items: rows, total };
+    },
+    async user(id) {
+      const r = (await pool.query(`${adminSelect} WHERE u.id = $1`, [id])).rows[0];
+      return r ? adminOut(r) : null;
+    },
+    async clientsOf(id) {
+      const r = await pool.query(`${adminSelect} WHERE u.trainer_id = $1 ORDER BY u.seq`, [id]);
+      return r.rows.map(adminOut);
+    },
+    // The newest workouts of one profile, trimmed to what a table shows.
+    async recentWorkouts(id, n = 20) {
+      const r = await pool.query(
+        `SELECT w->>'d' AS d, w->>'name' AS name, w->>'vol' AS vol, w->>'start' AS start, w->>'end' AS "end",
+                CASE WHEN jsonb_typeof(w->'entries') = 'array' THEN jsonb_array_length(w->'entries') END AS exercises
+           FROM user_state s,
+                LATERAL (SELECT e AS w FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.state->'workouts') = 'array' THEN s.state->'workouts' ELSE '[]'::jsonb END) WITH ORDINALITY AS t(e, i)
+                          WHERE jsonb_typeof(e) = 'object' ORDER BY i DESC LIMIT $2) x
+          WHERE s.user_id = $1`, [id, n]
+      );
+      return r.rows.map(x => ({
+        d: x.d || null, name: x.name || null, vol: x.vol == null ? null : +x.vol || null,
+        minutes: x.start && x.end && +x.end > +x.start ? Math.round((+x.end - +x.start) / 60000) : null,
+        exercises: x.exercises == null ? null : +x.exercises
+      }));
+    },
+    async overview() {
+      const n = async sql => +(await pool.query(sql)).rows[0].n;
+      const week = Date.now() - 7 * 86400000;
+      const day = Date.now() - 86400000;
+      return {
+        users: await n('SELECT count(*)::int AS n FROM users'),
+        trainers: await n(`SELECT count(*)::int AS n FROM users WHERE role = 'trainer'`),
+        clients: await n('SELECT count(*)::int AS n FROM users WHERE trainer_id IS NOT NULL'),
+        disabled: await n('SELECT count(*)::int AS n FROM users WHERE disabled'),
+        newWeek: await n(`SELECT count(*)::int AS n FROM users WHERE created >= '${new Date(week).toISOString()}'`),
+        activeWeek: await n(`SELECT count(*)::int AS n FROM users u LEFT JOIN user_state s ON s.user_id = u.id
+          WHERE u.last_pull >= ${week} OR (jsonb_typeof(s.state->'_ts') = 'number' AND (s.state->>'_ts')::bigint >= ${week})`),
+        workouts: await n(`SELECT COALESCE(sum(jsonb_array_length(${OBJS})), 0)::int AS n FROM user_state s`),
+        push: await n('SELECT count(*)::int AS n FROM push_subs'),
+        events24h: await n(`SELECT count(*)::int AS n FROM audit WHERE ts >= ${day}`),
+        failed24h: await n(`SELECT count(*)::int AS n FROM audit WHERE ts >= ${day} AND NOT ok`)
+      };
+    }
+  };
+
   async function close() { await pool.end(); }
   async function ping() { await pool.query('SELECT 1'); }
 
   return {
     pool, q, tx, close, ping, register,
-    users, creds, subs, invites, deviceLinks, state, assignments, audit
+    users, creds, subs, invites, deviceLinks, state, assignments, audit, admin
   };
 }
