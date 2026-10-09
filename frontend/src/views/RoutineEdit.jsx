@@ -340,8 +340,8 @@ function SendPlan({ routine, clientId, S, done }) {
   return <div className="card" style={{ margin: '16px 0' }}>
     <div style={{ fontWeight: 600, marginBottom: 8 }}>Send this plan{name ? ' to ' + name : ''}</div>
     <div className="muted small" style={{ marginBottom: 6 }}>Days (optional)</div>
-    <div className="row" style={{ gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-      {ORDER.map(d => <Button key={d} size="sm" variant={days.includes(d) ? 'primary' : undefined} onClick={() => setDays(x => x.includes(d) ? x.filter(y => y !== d) : [...x, d])}>{LABEL[d]}</Button>)}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 12 }}>
+      {ORDER.map(d => <Button key={d} size="sm" style={{ padding: '8px 0', minWidth: 0 }} variant={days.includes(d) ? 'primary' : undefined} onClick={() => setDays(x => x.includes(d) ? x.filter(y => y !== d) : [...x, d])}>{LABEL[d]}</Button>)}
     </div>
     <TextArea value={note} placeholder="Note (optional)" maxLength={500} onChange={e => setNote(e.target.value)} />
     <div style={{ height: 10 }} />

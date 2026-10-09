@@ -157,6 +157,9 @@ export function TeamClient() {
   const open = pid => nav('/team/plan/' + pid + '?for=' + encodeURIComponent(id))
   // A new plan is a saved plan of the trainer's own, kept apart from the routines they train with.
   const make = () => {
+    // An untouched empty plan is picked up again, so unused ones never pile up.
+    const empty = (S.trainerPlans || []).find(r => r.name === 'New plan' && !r.ex.length)
+    if (empty) return open(empty.id)
     const r = { id: uid(), name: 'New plan', emoji: DEFAULT_GLYPH, ex: [] }
     update(s => { s.trainerPlans = [...(s.trainerPlans || []), r] })
     open(r.id)
@@ -170,7 +173,7 @@ export function TeamClient() {
   }
   if (!d) return <><Header title="Client" back="/team" /><div className="muted small">Loading…</div></>
 
-  const saved = S.trainerPlans || []
+  const saved = (S.trainerPlans || []).filter(r => r.ex.length)
   const lastBW = d.bodyweight[d.bodyweight.length - 1]
   return <>
     <Header title="Client" back="/team" />
