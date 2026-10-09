@@ -502,6 +502,8 @@ export default {
   'Print / Save as PDF': 'Друк / Зберегти як PDF',
   'Share as PDF': 'Поділитися як PDF',
   'PDF downloaded': 'PDF завантажено',
+  'Include pictures': 'Додати зображення',
+  'Making PDF…': 'Створюю PDF…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Охайний друк, одна сторінка на план — жодна вправа не розривається між сторінками.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Спочатку додай вправу в програму — порожнім планом нема чим ділитися.',
   'Got a plan from a friend?': 'Отримав план від друга?',

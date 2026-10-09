@@ -675,6 +675,8 @@ export default {
   'Print / Save as PDF': 'Печать / Сохранить как PDF',
   'Share as PDF': 'Поделиться как PDF',
   'PDF downloaded': 'PDF скачан',
+  'Include pictures': 'Добавить картинки',
+  'Making PDF…': 'Создаю PDF…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Аккуратная распечатка, одна страница на план — ни одно упражнение не разрывается между страницами.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Сначала добавь упражнение в программу — пустым планом нечего делиться.',
   'Got a plan from a friend?': 'Получил план от друга?',

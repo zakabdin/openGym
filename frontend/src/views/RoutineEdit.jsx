@@ -18,7 +18,7 @@ import { Button, Row, SelectRow, Switch, TextArea } from '../components/ui.jsx'
 import SwipeToDelete from '../components/SwipeToDelete.jsx'
 import { copyRoutine, deleteRoutine, replaceSlotExercise } from '../lib/routines.js'
 import { planPrintHTML } from '../lib/plan-share.js'
-import { sharePlanPdf } from '../lib/plan-pdf.js'
+import { sharePlanPdf, getPdfPictures, setPdfPictures } from '../lib/plan-pdf.js'
 import { MOBILE, printHtml } from '../lib/mobile.js'
 import { speedUnitOf } from '../lib/speed.js'
 import { POLICIES_FOR, POLICY_NAME, POLICY_DESC } from '../lib/progression.js'
@@ -365,6 +365,8 @@ export default function RoutineEdit({ tpl = false }) {
   const update = useStore(s => s.update)
   const toast = useUI(s => s.toast)
   const r = (S[LIST] || []).find(x => x.id === id)
+  const [pics, setPics] = useState(getPdfPictures)
+  const [making, setMaking] = useState(false)
   useEffect(() => { if (!r) nav('/plan') }, [!!r])
   // Editing here has no explicit "save" — every field change persists immediately. A single
   // auto-backup on the way out (not per keystroke) covers the whole editing session, deletion
@@ -420,9 +422,13 @@ export default function RoutineEdit({ tpl = false }) {
     // Android's print manager refuses a job without a name. The editor never leaves a name blank,
     // but a routine that arrived from an import or another client may have none.
     if (MOBILE) printHtml(planPrintHTML(tpl ? { ...S, routines: S.trainerPlans } : S, owner, { routineId: id }), r.name || t('Routine')).catch(() => { /* dismissed */ })
-    else sharePlanPdf(tpl ? { ...S, routines: S.trainerPlans } : S, owner, { routineId: id })
-      .then(r => { if (r === 'downloaded') toast(t('PDF downloaded')) })
-      .catch(() => toast(t('Something went wrong')))
+    else {
+      setMaking(true)
+      sharePlanPdf(tpl ? { ...S, routines: S.trainerPlans } : S, owner, { routineId: id, pictures: pics })
+        .then(res => { if (res === 'downloaded') toast(t('PDF downloaded')) })
+        .catch(() => toast(t('Something went wrong')))
+        .finally(() => setMaking(false))
+    }
   }
   const toggleLink = i => edit(ex => {
     if (i < 1) return
@@ -548,7 +554,10 @@ export default function RoutineEdit({ tpl = false }) {
       nav((tpl ? '/team/plan/' : '/plan/r/') + copy.id + (forClient ? '?for=' + encodeURIComponent(forClient) : ''))
     }}>{t('Copy routine')}</Button>
     <div style={{ height: 10 }} />
-    <Button disabled={!r.ex.length} onClick={printRoutine}>{MOBILE ? t('Print / Save as PDF') : t('Share as PDF')}</Button>
+    {!MOBILE && <Row icon="image" title={t('Include pictures')}>
+      <Switch checked={pics} onChange={v => { setPics(v); setPdfPictures(v) }} />
+    </Row>}
+    <Button disabled={!r.ex.length || making} onClick={printRoutine}>{MOBILE ? t('Print / Save as PDF') : making ? t('Making PDF…') : t('Share as PDF')}</Button>
     <div style={{ height: 10 }} />
     <Button variant="danger" onClick={() => confirmSheet({
       title: t('Delete routine?'), message: t('“{0}” and its exercises will be removed.', r.name), confirmText: t('Delete'), danger: true,

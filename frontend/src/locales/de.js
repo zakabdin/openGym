@@ -694,6 +694,8 @@ export default {
   'Print / Save as PDF': 'Drucken / Als PDF speichern',
   'Share as PDF': 'Als PDF teilen',
   'PDF downloaded': 'PDF heruntergeladen',
+  'Include pictures': 'Bilder einfügen',
+  'Making PDF…': 'PDF wird erstellt…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Ein sauberer Ausdruck, eine Seite pro Plan — keine Übung wird je über eine Seite getrennt.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Füge zuerst eine Übung zu einer Routine hinzu — ein leerer Plan hat nichts zu teilen.',
   'Got a plan from a friend?': 'Plan von einem Freund bekommen?',

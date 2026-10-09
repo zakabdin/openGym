@@ -675,6 +675,8 @@ export default {
   'Print / Save as PDF': 'प्रिंट करें / PDF के रूप में सहेजें',
   'Share as PDF': 'PDF के रूप में साझा करें',
   'PDF downloaded': 'PDF डाउनलोड हो गया',
+  'Include pictures': 'चित्र शामिल करें',
+  'Making PDF…': 'PDF बन रहा है…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'हर प्लान के लिए एक साफ़-सुथरा एक-पेज प्रिंटआउट — कोई भी व्यायाम पन्नों के बीच नहीं बँटता।',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'पहले किसी रूटीन में व्यायाम जोड़ें — खाली प्लान में साझा करने को कुछ नहीं है।',
   'Got a plan from a friend?': 'किसी दोस्त से प्लान मिला है?',

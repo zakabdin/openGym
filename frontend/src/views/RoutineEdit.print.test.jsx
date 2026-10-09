@@ -11,7 +11,7 @@ vi.mock('../lib/api.js', () => ({ api: vi.fn(() => Promise.resolve({})) }))
 vi.mock('../sheets.jsx', () => ({ exConfigSheet: vi.fn(), exercisePicker: vi.fn(), glyphPicker: vi.fn(), confirmSheet: vi.fn() }))
 vi.mock('../components/Media.jsx', () => ({ Thumb: () => null }))
 vi.mock('../components/BodyMap.jsx', () => ({ default: () => null }))
-vi.mock('../lib/plan-pdf.js', () => ({ sharePlanPdf: vi.fn(() => Promise.resolve('shared')) }))
+vi.mock('../lib/plan-pdf.js', () => ({ sharePlanPdf: vi.fn(() => Promise.resolve('shared')), getPdfPictures: () => true, setPdfPictures: vi.fn() }))
 vi.mock('../lib/mobile.js', async importOriginal => {
   const real = await importOriginal()
   env.printHtml = vi.fn(() => Promise.resolve())
@@ -53,7 +53,7 @@ describe('RoutineEdit — print this routine (#282)', () => {
     const [S, owner, opts] = printPlan.mock.calls[0]
     expect(S.routines[0].id).toBe('r1')
     expect(owner).toBe('Ana')
-    expect(opts).toEqual({ routineId: 'r1' })
+    expect(opts).toEqual({ routineId: 'r1', pictures: true })
     expect(env.printHtml).not.toHaveBeenCalled()
   })
 

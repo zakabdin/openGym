@@ -11,7 +11,9 @@ const stubPages = () => {
       font: '', fillStyle: '', textAlign: '', direction: '', strokeStyle: '', lineWidth: 0,
       measureText: s => ({ width: String(s).length * 14 }),
       fillText: (s, x, y) => texts.push({ s: String(s), x, y }),
-      fillRect() {}, strokeRect() {}, clearRect() {}
+      fillRect() {}, strokeRect() {}, clearRect() {},
+      save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, stroke() {},
+      drawImage: (img, x, y, w, h) => texts.push({ s: '[img ' + img.id + ']', x, y, w, h })
     }
     pages.push(texts)
     return ctx
@@ -62,6 +64,35 @@ describe('layoutPlan', () => {
   })
 })
 
+describe('layoutPlan with pictures', () => {
+  const img = id => ({ id })
+  it('draws a picture for each exercise that has one and moves its text along', () => {
+    const data = planPrintData({ ...S(1), week: {} }, '')
+    const plain = stubPages(); layoutPlan(data, plain.newPage)
+    const pics = stubPages(); layoutPlan(data, pics.newPage, new Map([['0025', img('A')]]))
+    const drawn = pics.pages.flat().filter(t => t.s.startsWith('[img'))
+    expect(drawn.map(t => t.s)).toEqual(['[img A]'])
+    expect(drawn[0].w).toBe(112)
+    const nameX = pages => pages.flat().find(t => t.s.startsWith('Barbell Bench')).x
+    expect(nameX(pics.pages)).toBeGreaterThan(nameX(plain.pages) + 100)
+    // the exercise without a picture keeps its own left edge
+    const other = pages => pages.flat().find(t => t.s.startsWith('3/4 Sit-up')).x
+    expect(other(pics.pages)).toBe(other(plain.pages))
+  })
+  it('makes a row at least as tall as its picture, and still paginates', () => {
+    const data = planPrintData({ ...S(14), week: {} }, '')
+    const a = stubPages(), b = stubPages()
+    const plain = layoutPlan(data, a.newPage)
+    const withPics = layoutPlan(data, b.newPage, new Map([['0025', img('A')], ['0001', img('B')]]))
+    expect(withPics).toBeGreaterThanOrEqual(plain)
+    for (const p of b.pages) for (const t of p) expect(t.y).toBeLessThanOrEqual(1754)
+  })
+  it('does not need any pictures', () => {
+    const { newPage } = stubPages()
+    expect(layoutPlan(planPrintData(S(1), ''), newPage, new Map())).toBe(1)
+  })
+})
+
 describe('buildPdf', () => {
   const jpeg = new Uint8Array([0xff, 0xd8, 1, 2, 3, 0xff, 0xd9])
   const text = u8 => new TextDecoder('latin1').decode(u8)
@@ -86,5 +117,14 @@ describe('buildPdf', () => {
     expect(s).toContain(`/Length ${jpeg.length}`)
     const at = s.indexOf('stream\n\xff\xd8') + 7
     expect([...pdf.slice(at, at + jpeg.length)]).toEqual([...jpeg])
+  })
+})
+
+describe('the footer', () => {
+  it('names the bot when there is one, and never the project website', () => {
+    const f = link => planPrintData(S(1), '', { link }).footer
+    expect(f('t.me/lift_track_bot')).toBe('Made with openGym · t.me/lift_track_bot')
+    expect(f(undefined)).toBe('Made with openGym')
+    expect(f('t.me/x')).not.toContain('duarte')
   })
 })

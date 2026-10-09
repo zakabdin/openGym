@@ -210,6 +210,8 @@ export const PT_BR_OVERRIDES = {
   'Print / Save as PDF': 'Imprimir / Salvar como PDF',
   'Share as PDF': 'Compartilhar como PDF',
   'PDF downloaded': 'PDF baixado',
+  'Include pictures': 'Incluir imagens',
+  'Making PDF…': 'Criando PDF…',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Adicione primeiro um exercício a uma rotina — um plano vazio não tem nada para compartilhar.',
   'Import a plan file': 'Importar arquivo do plano',
   'Plan file saved — send it to a friend': 'Arquivo do plano salvo — envie-o para um amigo',

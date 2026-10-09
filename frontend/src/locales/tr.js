@@ -675,6 +675,8 @@ export default {
   'Print / Save as PDF': 'Yazdır / PDF olarak kaydet',
   'Share as PDF': 'PDF olarak paylaş',
   'PDF downloaded': 'PDF indirildi',
+  'Include pictures': 'Resimleri ekle',
+  'Making PDF…': 'PDF hazırlanıyor…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Temiz bir çıktı, plan başına tek sayfa — hiçbir egzersiz sayfalar arasında bölünmez.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Önce bir rutine egzersiz ekle — boş bir planın paylaşacak bir şeyi yok.',
   'Got a plan from a friend?': 'Bir arkadaşından plan mı aldın?',

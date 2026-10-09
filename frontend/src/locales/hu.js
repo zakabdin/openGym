@@ -653,6 +653,8 @@ export default {
   'Print / Save as PDF': 'Nyomtatás / Mentés PDF-ként',
   'Share as PDF': 'Megosztás PDF-ként',
   'PDF downloaded': 'PDF letöltve',
+  'Include pictures': 'Képek belefoglalása',
+  'Making PDF…': 'PDF készítése…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'Egy tiszta nyomtatvány, egy oldal tervenként — egyetlen gyakorlat sem törik meg oldalhatáron.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'Adj hozzá előbb egy gyakorlatot egy rutinhoz — egy üres tervnek nincs mit megosztania.',
   'Got a plan from a friend?': 'Kaptál tervet egy baráttól?',

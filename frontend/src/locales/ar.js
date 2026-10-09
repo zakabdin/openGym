@@ -540,6 +540,8 @@ export default {
   'Print / Save as PDF': 'طباعة / حفظ كملف PDF',
   'Share as PDF': 'مشاركة كملف PDF',
   'PDF downloaded': 'تم تنزيل PDF',
+  'Include pictures': 'تضمين الصور',
+  'Making PDF…': 'جارٍ إنشاء PDF…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': 'طباعة نظيفة بصفحة واحدة لكل خطة — لا ينقسم أي تمرين عبر الصفحة أبداً.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': 'أضف تمرينًا إلى الروتين أولًا — لا يمكن مشاركة خطة فارغة.',
   'Got a plan from a friend?': 'حصلت على خطة من صديق؟',

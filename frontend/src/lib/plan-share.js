@@ -373,7 +373,7 @@ function weekHTML(S) {
  * The same printout as planPrintHTML, as plain data — what the PDF is drawn from (lib/plan-pdf.js),
  * so the two never word anything differently. `routineId` is that one routine on its own.
  */
-export function planPrintData(S, owner, { routineId } = {}) {
+export function planPrintData(S, owner, { routineId, link } = {}) {
   const unit = S.unit || 'kg'
   const speedUnit = speedUnitOf(S)
   const single = routineId ? (S.routines || []).find(r => r.id === routineId) || null : null
@@ -383,6 +383,7 @@ export function planPrintData(S, owner, { routineId } = {}) {
     const cap = ex && exerciseNameClass(ex)
     const name = ex ? exerciseNameFor(ex) : t('Unknown exercise')
     return {
+      exId: e.id,
       name: cap ? name.replace(/(^|\s)(\S)/g, (m, a, b) => a + b.toUpperCase()) : name,
       part: ex && ex.bp && ex.bp !== 'cardio' ? t(ex.bp) : '',
       scheme: scheme(e, unit, speedUnit),
@@ -404,7 +405,8 @@ export function planPrintData(S, owner, { routineId } = {}) {
     })),
     none: t('No routines yet.'),
     blocks: { week: t('Week schedule'), routines: t('Routines'), superset: t('Superset') },
-    footer: t('Made with openGym') + ' · opengym.duarte-santos.ch'
+    // The instance's own bot link when it has one, never the project's website.
+    footer: link ? t('Made with openGym') + ' · ' + link : t('Made with openGym')
   }
 }
 

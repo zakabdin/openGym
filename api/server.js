@@ -1783,6 +1783,8 @@ const routes = {
       // Only when on, so an instance without passwords answers exactly as it did before (#118).
       ...(PASSWORD_LOGIN ? { password_login: true } : {}),
       ...(TELEGRAM_BOT_TOKEN ? { telegram: true } : {}),
+      // The bot's public @name, for the footer of a shared PDF.
+      ...(TELEGRAM_BOT_USERNAME ? { telegram_bot: TELEGRAM_BOT_USERNAME } : {}),
       // Public: the sign-in screen is the first thing that reads it.
       ...(DEFAULT_LANG ? { default_lang: DEFAULT_LANG } : {}),
       // Public like the two flags above: the caps are not a secret, and the absence of the

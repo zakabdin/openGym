@@ -675,6 +675,8 @@ export default {
   'Print / Save as PDF': '인쇄 / PDF로 저장',
   'Share as PDF': 'PDF로 공유',
   'PDF downloaded': 'PDF를 다운로드했습니다',
+  'Include pictures': '사진 포함',
+  'Making PDF…': 'PDF 만드는 중…',
   'A clean one-page-per-plan printout — no exercise ever splits across a page.': '계획당 한 페이지의 깔끔한 출력물 — 어떤 운동도 페이지 사이에서 나뉘지 않습니다.',
   'Add an exercise to a routine first — an empty plan has nothing to share.': '먼저 루틴에 운동을 추가하세요 — 빈 계획은 공유할 것이 없습니다.',
   'Got a plan from a friend?': '친구에게서 계획을 받으셨나요?',

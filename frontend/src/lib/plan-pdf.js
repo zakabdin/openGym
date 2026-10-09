@@ -4,18 +4,21 @@
 // this says exactly what the print view says. `sharePlanPdf` then hands the file to the system
 // share sheet, or downloads it where sharing files isn't available.
 import { planPrintData } from './plan-share.js'
+import { EXIDX, imgSrc } from './exercises.js'
 
 const PX_W = 1240, PX_H = 1754            // A4 at 150 dpi
 const PT_W = 595.28, PT_H = 841.89        // A4 in PDF points
 const M = 96                               // page margin, px
+const PIC = 112, PIC_GAP = 22              // an exercise's picture, and the space after it, px
 const FONT = '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
 const C = { ink: '#16181d', dim: '#6b7180', faint: '#a2a8b6', line: '#e4e6ec', soft: '#eef0f4', accent: '#6a7a3a', bar: '#cfe08a' }
 
 /**
  * Draw `data` (planPrintData) onto pages. `newPage()` must return a fresh 2D context sized
- * PX_W × PX_H, white, and is called once per page; returns how many pages were drawn.
+ * PX_W × PX_H, white, and is called once per page; returns how many pages were drawn. `images` maps
+ * an exercise id to a loaded image: those rows get a picture beside the name, the rest stay text.
  */
-export function layoutPlan(data, newPage) {
+export function layoutPlan(data, newPage, images = new Map()) {
   let ctx = null, y = 0, pages = 0
   const left = M, right = PX_W - M, bottom = PX_H - M - 40
   const rtl = !!data.rtl
@@ -78,7 +81,7 @@ export function layoutPlan(data, newPage) {
   data.routines.forEach(r => {
     // The routine's heading never sits alone at the foot of a page: it moves with its first row.
     const rowsOf = r.units.length ? r.units : [{ empty: true }]
-    const firstH = rowHeight(rowsOf[0], r, wrap, width, right - left - 2 * indent)
+    const firstH = rowHeight(rowsOf[0])
     room((r.bare ? 0 : 74) + firstH)
     if (!r.bare) {
       put(r.name, startX, y + 40, { size: 38, weight: 700 })
@@ -86,12 +89,44 @@ export function layoutPlan(data, newPage) {
       y += 56; rule(y); y += 14
     }
     rowsOf.forEach(u => {
-      const h = rowHeight(u, r, wrap, width, right - left - 2 * indent)
+      const h = rowHeight(u)
       room(h)
       drawRow(u, r)
     })
     y += 34
   })
+
+  // One exercise: where its text goes and how tall it is. A picture takes the start of the row and
+  // pushes the text along; a row is never shorter than its picture.
+  function itemMetrics(it, inset) {
+    const inner = right - left - 2 * indent
+    const pic = images.get(it.exId) || null
+    const shift = pic ? PIC + PIC_GAP : 0
+    const schemeW = width(it.scheme, 28, 400)
+    const nameMax = Math.max(200, inner - inset - shift - schemeW - 40)
+    const nameLines = wrap(it.name + (it.part ? '  ' + it.part : ''), nameMax, 30, 500)
+    const noteLines = it.note ? wrap(it.note, inner - inset - shift, 22, 400) : []
+    const text = nameLines.length * 40 + 8 + noteLines.length * 30
+    return { pic, shift, nameLines, noteLines, height: Math.max(text, pic ? PIC : 0) + 12 }
+  }
+  // How tall a row will be, measured the same way it is drawn, so a page break is decided first.
+  function rowHeight(u) {
+    if (u.empty) return 56
+    const inset = u.superset ? 30 : 0
+    return (u.superset ? 30 : 0) + u.items.reduce((h, it) => h + itemMetrics(it, inset).height, 0)
+  }
+
+  function drawPicture(img, x, yy) {
+    const bx = rtl ? x - PIC : x
+    ctx.save?.()
+    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, PIC, PIC, 14) : ctx.rect?.(bx, yy, PIC, PIC)
+    ctx.clip?.()
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx, yy, PIC, PIC)
+    ctx.drawImage(img, bx, yy, PIC, PIC)
+    ctx.restore?.()
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2
+    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, PIC, PIC, 14) : ctx.rect?.(bx, yy, PIC, PIC); ctx.stroke?.()
+  }
 
   function drawRow(u, r) {
     if (u.empty) { put(r.empty, startX + (rtl ? -indent : indent), y + 38, { size: 28, color: C.faint }); y += 56; return }
@@ -99,12 +134,13 @@ export function layoutPlan(data, newPage) {
     const top = y
     if (u.superset) { put(data.blocks.superset.toUpperCase(), startX + (rtl ? -(indent + inset) : indent + inset), y + 28, { size: 18, weight: 700, color: C.accent }); y += 30 }
     u.items.forEach(it => {
-      const x0 = startX + (rtl ? -(indent + inset) : indent + inset)
+      const m = itemMetrics(it, inset)
+      const edge = startX + (rtl ? -(indent + inset) : indent + inset)   // where the row starts
+      const x0 = edge + (rtl ? -m.shift : m.shift)                          // where its text starts
       const x1 = endX + (rtl ? indent : -indent)
-      const schemeW = width(it.scheme, 28, 400)
-      const nameMax = Math.max(200, (right - left) - 2 * indent - inset - schemeW - 40)
-      const nameLines = wrap(it.name + (it.part ? '  ' + it.part : ''), nameMax, 30, 500)
-      nameLines.forEach((l, i) => {
+      const rowTop = y
+      if (m.pic) drawPicture(m.pic, edge, y + 2)
+      m.nameLines.forEach((l, i) => {
         // The body part is printed smaller and dimmer after the name, on the last line.
         const partAt = it.part && l.endsWith(it.part) ? l.length - it.part.length : -1
         const nm = partAt >= 0 ? l.slice(0, partAt).trimEnd() : l
@@ -114,27 +150,12 @@ export function layoutPlan(data, newPage) {
         y += 40
       })
       y += 8
-      if (it.note) for (const nl of wrap(it.note, right - left - 2 * indent - inset, 22, 400)) { put(nl, x0, y + 24, { size: 22, color: C.dim }); y += 30 }
-      y += 12
+      for (const nl of m.noteLines) { put(nl, x0, y + 24, { size: 22, color: C.dim }); y += 30 }
+      y = rowTop + m.height
     })
     if (u.superset) { ctx.fillStyle = C.bar; ctx.fillRect(rtl ? right - indent + 6 : left + indent - 18, top + 6, 6, y - top - 12) }
   }
   return pages
-}
-
-// How tall a row will be, using the same measuring as drawRow so a page break is decided before drawing.
-function rowHeight(u, r, wrap, width, inner) {
-  if (u.empty) return 56
-  let h = u.superset ? 30 : 0
-  const inset = u.superset ? 30 : 0
-  u.items.forEach(it => {
-    const schemeW = width(it.scheme, 28, 400)
-    const nameMax = Math.max(200, inner - inset - schemeW - 40)
-    h += wrap(it.name + (it.part ? '  ' + it.part : ''), nameMax, 30, 500).length * 40 + 8
-    if (it.note) h += wrap(it.note, inner - inset, 22, 400).length * 30
-    h += 12
-  })
-  return h
 }
 
 const enc = s => new TextEncoder().encode(s)
@@ -178,9 +199,32 @@ export function buildPdf(pages) {
 
 const canvasBlob = (c, type, q) => new Promise((res, rej) => c.toBlob(b => (b ? res(b) : rej(new Error('canvas'))), type, q))
 
-/** Render the plan to a PDF Blob. Needs a browser canvas. */
-export async function renderPlanPdf(S, owner, opts) {
-  const data = planPrintData(S, owner, opts)
+// Load each built-in exercise's still once. A picture that is slow or missing is just left out:
+// the PDF is more useful without it than not made at all.
+function loadImages(data, timeoutMs = 8000) {
+  const ids = new Set(data.routines.flatMap(r => r.units.flatMap(u => u.items.map(i => i.exId))))
+  const images = new Map()
+  const one = id => new Promise(resolve => {
+    const ex = EXIDX[id]
+    if (!ex || ex.custom || !ex.img) return resolve()
+    const img = new Image()
+    const done = ok => { clearTimeout(tm); if (ok) images.set(id, img); resolve() }
+    const tm = setTimeout(() => done(false), timeoutMs)
+    img.onload = () => done(true)
+    img.onerror = () => done(false)
+    img.src = new URL(imgSrc(ex), document.baseURI).href
+  })
+  return Promise.all([...ids].map(one)).then(() => images)
+}
+
+/** Render the plan to a PDF Blob. Needs a browser canvas. `opts.pictures` puts each exercise's picture in. */
+export async function renderPlanPdf(S, owner, opts = {}) {
+  const { pictures, ...printOpts } = opts
+  // "t.me/<bot>" from the server's config; an instance without a bot just says who made it.
+  let link
+  try { const { useStore } = await import('../store/useStore.js'); const bot = (await useStore.getState().loadConfig())?.telegram_bot; if (bot) link = 't.me/' + bot } catch { /* no server */ }
+  const data = planPrintData(S, owner, { link, ...printOpts })
+  const images = pictures ? await loadImages(data) : new Map()
   const canvases = []
   layoutPlan(data, () => {
     const c = document.createElement('canvas')
@@ -189,7 +233,7 @@ export async function renderPlanPdf(S, owner, opts) {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PX_W, PX_H)
     canvases.push(c)
     return ctx
-  })
+  }, images)
   const pages = []
   for (const c of canvases) {
     const jpeg = new Uint8Array(await (await canvasBlob(c, 'image/jpeg', 0.92)).arrayBuffer())
@@ -221,3 +265,8 @@ export async function sharePlanPdf(S, owner, opts) {
   setTimeout(() => URL.revokeObjectURL(url), 60000)
   return 'downloaded'
 }
+
+// Whether the PDF carries the exercise pictures: on unless the person turned it off, and remembered.
+const PICS_KEY = 'og_pdf_pictures'
+export const getPdfPictures = () => { try { return localStorage.getItem(PICS_KEY) !== '0' } catch { return true } }
+export const setPdfPictures = on => { try { localStorage.setItem(PICS_KEY, on ? '1' : '0') } catch { /* private mode */ } }

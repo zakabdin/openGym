@@ -28,7 +28,7 @@ import { exerciseMuscleSnapshot, loadOfWorkouts, MUSCLES, MUSCLE_NAME, normalize
 import { parseImport, mergeImport } from './lib/import-csv.js'
 import { importHevyData, HevyApiError, HEVY_DEV_SETTINGS, mergeHevyRoutines } from './lib/import-hevy.js'
 import { buildPlanBundle, parsePlan, mergePlan, planPrintHTML } from './lib/plan-share.js'
-import { sharePlanPdf } from './lib/plan-pdf.js'
+import { sharePlanPdf, getPdfPictures, setPdfPictures } from './lib/plan-pdf.js'
 import { estimate1RM, best1RM, is1RMRecord, REP_CAP } from './lib/onerm.js'
 import { exerciseHistory } from './lib/exercise-history.js'
 import { policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MAX_BW_SETS, weightIncrement } from './lib/progression.js'
@@ -1732,6 +1732,7 @@ function PlanTools({ close }) {
   const user = useStore(s => s.user)
   const fileRef = useRef(null)
   const hasRoutines = (st.routines || []).some(r => r.ex && r.ex.length)
+  const [pics, setPics] = useState(getPdfPictures)
 
   const exportFile = async () => {
     const bundle = buildPlanBundle(st, user?.name ? t('{0}’s plan', user.name) : '')
@@ -1758,13 +1759,14 @@ function PlanTools({ close }) {
     <Button variant="primary" icon="upload" onClick={exportFile} disabled={!hasRoutines}>{t('Export plan file')}</Button>
     <div className="dim small" style={{ margin: '7px 2px 0', lineHeight: 1.4 }}>{t('A small file a friend imports into their own openGym — routines only, none of your workouts or weigh-ins.')}</div>
     <div style={{ height: 12 }} />
+    {!MOBILE && <Row icon="image" title={t('Include pictures')}><Switch checked={pics} onChange={v => { setPics(v); setPdfPictures(v) }} /></Row>}
     <Button variant="tinted" icon="download" onClick={() => {
       close()
       // Web: a real PDF file, handed to the share sheet (or downloaded) — window.print() does
       // nothing in a webview such as Telegram's. Mobile app: the OS print flow via the native
       // Print plugin, which Android WebView needs because it has no window.print().
       if (MOBILE) printHtml(planPrintHTML(st, user?.name || ''), t('Weekly Training Plan')).catch(() => { /* dismissed */ })
-      else sharePlanPdf(st, user?.name || '').then(r => { if (r === 'downloaded') toast(t('PDF downloaded')) }).catch(() => toast(t('Something went wrong')))
+      else sharePlanPdf(st, user?.name || '', { pictures: pics }).then(r => { if (r === 'downloaded') toast(t('PDF downloaded')) }).catch(() => toast(t('Something went wrong')))
     }} disabled={!hasRoutines}>{MOBILE ? t('Print / Save as PDF') : t('Share as PDF')}</Button>
     <div className="dim small" style={{ margin: '7px 2px 0', lineHeight: 1.4 }}>{t('A clean one-page-per-plan printout — no exercise ever splits across a page.')}</div>
     {!hasRoutines && <div className="dim small" style={{ margin: '12px 2px 0' }}>{t('Add an exercise to a routine first — an empty plan has nothing to share.')}</div>}
