@@ -305,8 +305,8 @@ export default function Settings() {
             pairing apply here, and there is nothing to sign out of (Telegram signs in again on
             the next launch). English-only, like the Team screen. */}
         <Row icon="person" iconTint="var(--acc)" title="Signed in with Telegram" subtitle={user.name} />
-        <Row icon="calendar" iconTint="var(--indigo)" title={user.role === 'trainer' ? 'Clients & programs' : 'Trainer & programs'}
-          subtitle={user.role === 'trainer' ? 'Your clients and the programs you send' : user.trainerId ? 'Programs from your trainer' : 'Join a trainer, or become one'}
+        <Row icon="calendar" iconTint="var(--indigo)" title={user.role === 'trainer' ? 'Clients & plans' : 'Trainer & plans'}
+          subtitle={user.role === 'trainer' ? 'Your clients and the plans you send' : user.trainerId ? 'Plans from your trainer' : 'Join a trainer, or become one'}
           accessory="chevron" onClick={() => nav('/team')} />
         {user.admin && <Row icon="wrench" iconTint="var(--indigo)" title={t('Admin dashboard')} accessory="chevron" onClick={() => nav('/admin')} />}
       </> : user ? <>

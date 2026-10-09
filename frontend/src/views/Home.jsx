@@ -181,8 +181,8 @@ export default function Home() {
     {user && <div className="card tappable" style={{ cursor: 'pointer' }} {...tappable(() => nav('/team'))}>
       <div className="row between">
         <div>
-          <div className="row" style={{ gap: 7, fontSize: 17, fontWeight: 600 }}><Icon name="person" />{user.role === 'trainer' ? 'Clients & programs' : 'Trainer & programs'}</div>
-          <div className="muted small" style={{ marginTop: 2 }}>{user.role === 'trainer' ? 'See your clients and send them programs' : user.trainerId ? 'Programs from your trainer' : 'Join a trainer, or become one'}</div>
+          <div className="row" style={{ gap: 7, fontSize: 17, fontWeight: 600 }}><Icon name="person" />{user.role === 'trainer' ? 'Clients & plans' : 'Trainer & plans'}</div>
+          <div className="muted small" style={{ marginTop: 2 }}>{user.role === 'trainer' ? 'See your clients and send them plans' : user.trainerId ? 'Plans from your trainer' : 'Join a trainer, or become one'}</div>
         </div>
         <Icon name="chevronRight" className="chev" />
       </div>

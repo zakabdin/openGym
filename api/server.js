@@ -2167,7 +2167,7 @@ const routes = {
     const a = newAssignment({ from: user.id, fromName: user.name, note: text(body.note), bundle });
     await store.assignments.update(c.id, list => ({ items: addAssignment(list, a) }));
     audit(req, 'trainer.assign', { user, target: c, msg: a.id });
-    sendTelegramMessage(TELEGRAM_BOT_TOKEN, c.tg?.id, `${user.name} sent you a new program on openGym.`);
+    sendTelegramMessage(TELEGRAM_BOT_TOKEN, c.tg?.id, `${user.name} sent you a new plan on openGym. Open the app to start it.`);
     json(res, 200, { id: a.id });
   },
 
@@ -2192,7 +2192,7 @@ const routes = {
     const done = a.hit;
     audit(req, done.status === 'accepted' ? 'trainer.inbox.accepted' : 'trainer.inbox.declined', { user, msg: done.id });
     const trainer = await store.users.byId(done.from);
-    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer?.tg?.id, `${user.name} ${done.status} your program.`);
+    sendTelegramMessage(TELEGRAM_BOT_TOKEN, trainer?.tg?.id, `${user.name} ${done.status === 'accepted' ? 'started' : 'put off'} the plan you sent.`);
     json(res, 200, { ok: true });
   },
 

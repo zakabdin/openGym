@@ -11,7 +11,7 @@ import { IN_TELEGRAM, telegramHaptic } from '../lib/telegram.js'
 import { DEFAULT_GLYPH } from '../lib/glyphs.js'
 import Icon from '../components/Icon.jsx'
 import '../team.css'
-import { Button, Section, Row, Check, Switch, TextField, TextArea } from '../components/ui.jsx'
+import { Button, Section, Row, Check, TextField, TextArea } from '../components/ui.jsx'
 
 // Trainers and their clients. Like the admin dashboard this screen is English-only: it is not
 // part of the translated end-user surface, so it stays out of the per-language string packs.
@@ -34,7 +34,7 @@ function Header({ title, sub, back }) {
   </div>
 }
 
-// The signed-in profile's side: its trainer, the programs waiting in the inbox, and the ones it took.
+// The signed-in profile's side: its trainer, the plans waiting in the inbox, and the ones it took.
 function MyTrainer() {
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
@@ -44,7 +44,6 @@ function MyTrainer() {
   const [mine, setMine] = useState(undefined)
   const [items, setItems] = useState([])
   const [code, setCode] = useState('')
-  const [withWeek, setWithWeek] = useState(true)
   const load = useCallback(() => {
     api('/api/trainer/mine').then(r => setMine(r.trainer)).catch(() => setMine(null))
     api('/api/inbox').then(r => setItems(r.items || [])).catch(() => {})
@@ -64,19 +63,19 @@ function MyTrainer() {
       if (status === 'accepted') {
         let res
         // The program lands in the profile first; only if that worked is the trainer told.
-        update(s => { res = applyProgram(s, item, { schedule: withWeek }) })
-        toast(res.routines + (res.routines === 1 ? ' routine added' : ' routines added') + (res.dropped ? ' · ' + res.dropped + ' unknown exercises skipped' : ''))
+        update(s => { res = applyProgram(s, item, { schedule: true }) })
+        toast('Plan added to your week · undo anytime in Your plans' + (res.dropped ? ' · ' + res.dropped + ' unknown exercises skipped' : ''))
         telegramHaptic('success')
       }
       await api('/api/inbox/resolve', { method: 'POST', body: JSON.stringify({ id: item.id, status }) })
       load()
     } catch (e) { toast(e.message) }
   }
-  const undo = id => { update(s => { undoProgram(s, id) }); toast('Program removed') }
+  const undo = id => { update(s => { undoProgram(s, id) }); toast('Plan removed') }
 
   const pending = items.filter(i => i.status === 'pending')
   return <>
-    {(mine || user?.role !== 'trainer') && <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts, body weight and routines, and can send you programs. Nothing changes in your plan until you accept one.' : 'Got a code or a link from your trainer? Opening their link joins you automatically.'}>
+    {(mine || user?.role !== 'trainer') && <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts, body weight and routines, and can send you plans. Nothing changes until you start one.' : 'Got a code or a link from your trainer? Opening their link joins you automatically.'}>
       {mine ? <>
         <div className="tm-client"><span className="tm-ava">{initial(mine.name)}</span><div><div className="nm">{mine.name}</div><div className="sb">Your trainer</div></div></div>
         <Row icon="reset" title="Leave this trainer" onClick={leave} danger />
@@ -86,26 +85,25 @@ function MyTrainer() {
       </div> : null}
     </Section>}
 
-    {pending.length > 0 && <Section title="New programs">
+    {pending.length > 0 && <Section title="New plans">
       {pending.map(i => <div key={i.id} style={{ padding: 12 }}>
-        <div style={{ fontWeight: 600 }}>{i.bundle?.name || 'Program'} <span className="dim small">from {i.fromName}</span></div>
-        <div className="dim small">{i.bundle?.routines?.length || 0} routines · {rel(i.created)}</div>
+        <div style={{ fontWeight: 600 }}>{i.bundle?.name || i.bundle?.routines?.[0]?.name || 'New plan'} <span className="dim small">from {i.fromName}</span></div>
+        <div className="dim small">{i.bundle?.routines?.length || 0} {i.bundle?.routines?.length === 1 ? 'workout' : 'workouts'} · {rel(i.created)}</div>
         {i.note && <div style={{ margin: '6px 0' }}>{i.note}</div>}
-        <div className="row between" style={{ margin: '8px 0' }}><span>Also set my weekly schedule</span><Switch checked={withWeek} onChange={setWithWeek} /></div>
         <div className="row" style={{ gap: 8 }}>
-          <Button variant="primary" onClick={() => answer(i, 'accepted')}>Accept</Button>
-          <Button onClick={() => answer(i, 'declined')}>Decline</Button>
+          <Button variant="primary" onClick={() => answer(i, 'accepted')}>Start this plan</Button>
+          <Button onClick={() => answer(i, 'declined')}>Not now</Button>
         </div>
       </div>)}
     </Section>}
 
-    {(S.programs || []).length > 0 && <Section title="Programs you took" footer="Undo removes the routines it added, and puts your previous week back if it replaced it.">
-      {S.programs.map(p => <Row key={p.id} icon="calendar" title={p.name || 'Program'} subtitle={'from ' + (p.from || 'your trainer') + ' · ' + p.routineIds.length + ' routines'}>
+    {(S.programs || []).length > 0 && <Section title="Your plans" footer="Undo removes the workouts it added, and puts your previous week back if it replaced it.">
+      {S.programs.map(p => <Row key={p.id} icon="calendar" title={p.name || 'Plan'} subtitle={'from ' + (p.from || 'your trainer') + ' · ' + p.routineIds.length + ' ' + (p.routineIds.length === 1 ? 'workout' : 'workouts')}>
         <Button size="sm" onClick={() => undo(p.id)}>Undo</Button>
       </Row>)}
     </Section>}
 
-    {user?.role !== 'trainer' && <Section title="Train others" footer="Become a trainer to get an invite link, see your clients' training and send them programs.">
+    {user?.role !== 'trainer' && <Section title="Train others" footer="Become a trainer to get an invite link, see your clients' training and send them plans.">
       <Row icon="plus" title="Become a trainer" onClick={async () => {
         try { await api('/api/trainer/enable', { method: 'POST', body: '{}' }); setUser({ ...user, role: 'trainer' }) } catch (e) { toast(e.message) }
       }} accessory="chevron" />
@@ -163,9 +161,7 @@ export function TeamClient() {
   const toast = useUI(s => s.toast)
   const [d, setD] = useState(null)
   const [pick, setPick] = useState({})
-  const [withWeek, setWithWeek] = useState(true)
   const [note, setNote] = useState('')
-  const [name, setName] = useState('')
   const load = useCallback(() => { api('/api/trainer/client?id=' + encodeURIComponent(id)).then(setD).catch(e => toast(e.message)) }, [id])
   useEffect(load, [load])
   // Build a routine for this client: it is made in the trainer's own plan (that is where the editor
@@ -185,9 +181,8 @@ export function TeamClient() {
       // The trainer's own routines, as their app would export them: just the chosen ones, and
       // only the weekdays that point at them.
       const sub = { ...S, routines: chosen, week: Object.fromEntries(Object.entries(S.week || {}).map(([k, v]) => [k, [].concat(v).filter(x => chosen.some(r => r.id === x))]).filter(([, v]) => v.length)) }
-      if (!withWeek) sub.week = {}
-      await api('/api/trainer/assign', { method: 'POST', body: JSON.stringify({ clientId: id, note, bundle: buildPlanBundle(sub, name) }) })
-      toast('Sent to ' + d.client.name); telegramHaptic('success'); setPick({}); setNote(''); load()
+      await api('/api/trainer/assign', { method: 'POST', body: JSON.stringify({ clientId: id, note, bundle: buildPlanBundle(sub, chosen.length === 1 ? chosen[0].name : '') }) })
+      toast('Plan sent to ' + d.client.name); telegramHaptic('success'); setPick({}); setNote(''); load()
     } catch (e) { toast(e.message) }
   }
   const lastBW = d.bodyweight[d.bodyweight.length - 1]
@@ -203,23 +198,21 @@ export function TeamClient() {
       <div className="tm-stat"><b>{d.workouts[0] ? fmtDate(d.workouts[0].d) : '—'}</b><span>Last trained</span></div>
       <div className="tm-stat"><b>{lastBW ? lastBW.w : '—'}</b><span>{'Body ' + d.unit}</span></div>
     </div>
-    <Section title="Send a program" footer={(S.routines || []).length ? 'Tick the routines to send, or build a new one for this client.' : 'No routines yet — build one for this client, then send it.'}>
-      {(S.routines || []).map(r => <Row key={r.id} title={<>{r.emoji && <span className="tm-emoji">{r.emoji}</span>}{r.name}</>} subtitle={(r.ex || []).length + ' exercises'} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
+    <Section title="Send a plan" footer={(S.routines || []).length ? 'Tick the workouts that make up the plan, or build a new one for this client.' : 'No routines yet — build one for this client, then send it.'}>
+      {(S.routines || []).map(r => <Row key={r.id} title={<>{r.emoji && <span className="tm-emoji">{r.emoji}</span>}{r.name}</>} subtitle={(r.ex || []).length + ((r.ex || []).length === 1 ? ' exercise' : ' exercises')} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
         <Check checked={!!pick[r.id]} onChange={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))} />
       </Row>)}
-      <div style={{ padding: '8px 12px' }}><Button size="sm" variant="tinted" icon="plus" onClick={create}>New routine for {d.client.name}</Button></div>
+      <div style={{ padding: '8px 12px' }}><Button size="sm" variant="tinted" icon="plus" onClick={create}>New workout for {d.client.name}</Button></div>
       {chosen.length > 0 && <div style={{ padding: 12 }}>
-        <TextField value={name} placeholder="Program name (optional)" onChange={e => setName(e.target.value)} />
-        <div style={{ height: 8 }} />
         <TextArea value={note} placeholder="Note to your client" maxLength={500} onChange={e => setNote(e.target.value)} />
-        <div className="row between" style={{ margin: '8px 0' }}><span>Include my weekly schedule</span><Switch checked={withWeek} onChange={setWithWeek} /></div>
-        <Button variant="primary" onClick={send}>Send {chosen.length} {chosen.length === 1 ? 'routine' : 'routines'}</Button>
+        <div style={{ height: 8 }} />
+        <Button variant="primary" onClick={send}>Send plan to {d.client.name}</Button>
       </div>}
     </Section>
-    {d.assignments.length > 0 && <Section title="Sent">
-      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Program'} subtitle={a.routines + ' routines · ' + rel(a.created)} value={a.status} />)}
+    {d.assignments.length > 0 && <Section title="Plans sent">
+      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Plan'} subtitle={a.routines + (a.routines === 1 ? ' workout' : ' workouts') + ' · ' + rel(a.created)} value={a.status === 'accepted' ? 'started' : a.status === 'declined' ? 'not now' : 'waiting'} />)}
     </Section>}
-    <Section title="Their routines">
+    <Section title="Their workouts">
       {d.routines.length ? d.routines.map(r => <Row key={r.id} title={r.name} value={r.count + ' ex'} />) : <div className="tm-empty">No routines yet.</div>}
     </Section>
     <Section title="Recent workouts">
@@ -234,6 +227,6 @@ export default function Team() {
   const user = useStore(s => s.user)
   return <>
     <Header title="Team" sub={user?.role === 'trainer' ? 'Trainer' : undefined} back="/home" />
-    {user ? <>{user.role === 'trainer' && <Clients />}<MyTrainer /></> : <div className="muted">Sign in with an account to use trainers and programs.</div>}
+    {user ? <>{user.role === 'trainer' && <Clients />}<MyTrainer /></> : <div className="muted">Sign in with an account to use trainers and plans.</div>}
   </>
 }
