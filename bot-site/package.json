@@ -1,0 +1,17 @@
+{
+  "name": "opengym-bot-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Informational site + PDF workout builder for the openGym Telegram bot",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "exercises": "node scripts/build-exercises.mjs"
+  },
+  "dependencies": {
+    "next": "16.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  }
+}

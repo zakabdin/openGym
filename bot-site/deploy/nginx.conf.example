@@ -1,0 +1,46 @@
+# /etc/nginx/sites-enabled/opengym — the app moves to app.opengym.one, the site takes opengym.one.
+server {
+    listen 80;
+    server_name opengym.one www.opengym.one app.opengym.one;
+    return 301 https://$host$request_uri;
+}
+
+# App + API + Telegram webhook (the existing `web` container)
+server {
+    listen 443 ssl http2;
+    server_name app.opengym.one;
+    ssl_certificate     /etc/ssl/cloudflare/opengym.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/opengym.key;
+    client_max_body_size 20m;
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Marketing site + workout builder (Next.js)
+server {
+    listen 443 ssl http2;
+    server_name opengym.one;
+    ssl_certificate     /etc/ssl/cloudflare/opengym.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/opengym.key;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name www.opengym.one;
+    ssl_certificate     /etc/ssl/cloudflare/opengym.pem;
+    ssl_certificate_key /etc/ssl/cloudflare/opengym.key;
+    return 301 https://opengym.one$request_uri;
+}

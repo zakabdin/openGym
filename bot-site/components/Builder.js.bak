@@ -1,0 +1,93 @@
+'use client'
+import { useState } from 'react'
+import { GOALS, EQUIPMENT, PRESETS, generate, newExercise, exById, nameOf } from '@/lib/generator'
+import Picker from './Picker'
+import { drawPlan, pagesToPdf, downloadPdf } from '@/lib/pdf'
+import { T } from '@/lib/i18n'
+import { BOT, BOT_URL, IMG_BASE } from '@/lib/site'
+
+export default function Builder({ lang }) {
+  const t = T[lang], b = t.b
+  const [goal, setGoal] = useState('muscle')
+  const [days, setDays] = useState(3)
+  const [minutes, setMinutes] = useState(60)
+  const [eq, setEq] = useState(PRESETS.gym)
+  const [seed, setSeed] = useState(1)
+  const [plan, setPlan] = useState(null)
+  const [title, setTitle] = useState(b.defaultTitle)
+
+  const toggle = k => setEq(e => (e.includes(k) ? e.filter(x => x !== k) : [...e, k]))
+  const make = (s = seed) => { if (eq.length) setPlan(generate({ goal, days, eq, minutes, seed: s })) }
+  const regen = () => { const s = seed + 1; setSeed(s); make(s) }
+  const edit = (di, fn) => setPlan(p => ({ ...p, days: p.days.map((d, i) => (i === di ? { ...d, exercises: fn(d.exercises) } : d)) }))
+  const [picking, setPicking] = useState(null) // { day, idx } — idx null adds, a number swaps
+  const onPick = id => {
+    const { day, idx } = picking
+    edit(day, ex => (idx === null ? [...ex, newExercise(id, goal)] : ex.map((y, j) => (j === idx ? { ...y, i: id, t: exById(id).t, e: exById(id).e } : y))))
+    setPicking(null)
+  }
+  const sub = x => `${t.muscles[x.t] || x.t} · ${t.equipNames[x.e] || x.e}`
+
+  const [busy, setBusy] = useState(false)
+  const pdf = async () => {
+    setBusy(true)
+    const pages = await drawPlan({
+      title, goalLabel: b.goals[goal], perWeek: b.perWeek(plan.days.length), note: b.notes[goal], labels: b,
+      days: plan.days.map((d, i) => ({ name: b.day(i + 1, d.kind), exercises: d.exercises.map(x => ({ name: nameOf(x.i, lang), sub: sub(x), sets: x.sets, reps: x.reps, rest: b.secs(x.rest), img: IMG_BASE + exById(x.i).m })) })),
+    })
+    downloadPdf(pagesToPdf(pages))
+    setBusy(false)
+  }
+
+  const same = p => eq.length === p.length && p.every(x => eq.includes(x))
+  return (
+    <>
+      <div className="panel"><h2>{b.goal}</h2><div className="chips">{Object.keys(GOALS).map(k => <button key={k} className="chip" aria-pressed={goal === k} onClick={() => setGoal(k)}>{b.goals[k]}</button>)}</div></div>
+      <div className="row">
+        <div className="panel"><h2>{b.days}</h2><div className="chips">{[2, 3, 4, 5, 6].map(n => <button key={n} className="chip" aria-pressed={days === n} onClick={() => setDays(n)}>{n}</button>)}</div></div>
+        <div className="panel"><h2>{b.len}</h2><div className="chips">{[30, 45, 60, 75, 90].map(n => <button key={n} className="chip" aria-pressed={minutes === n} onClick={() => setMinutes(n)}>{b.min(n)}</button>)}</div></div>
+      </div>
+      <div className="panel">
+        <h2>{b.eq}</h2>
+        <div className="chips" style={{ marginBottom: 12 }}>{Object.entries(PRESETS).map(([k, p]) => <button key={k} className="chip" aria-pressed={same(p)} onClick={() => setEq(p)}>{b.presets[k]}</button>)}</div>
+        <div className="chips">{EQUIPMENT.map(k => <button key={k} className="chip" aria-pressed={eq.includes(k)} onClick={() => toggle(k)}>{b.equip[k]}</button>)}</div>
+      </div>
+      <button className="btn" onClick={() => make()} disabled={!eq.length}>{plan ? b.regenBtn : b.gen}</button>
+
+      {plan && (
+        <div style={{ marginTop: 32 }}>
+          <div className="panel">
+            <h2>{b.planName}</h2>
+            <input value={title} onChange={e => setTitle(e.target.value)} maxLength={50} aria-label={b.planName} style={{ width: '100%', padding: 10, borderRadius: 8, border: '1px solid var(--hair)', background: 'var(--surface2)', color: 'var(--fg)', font: 'inherit' }} />
+            <p className="note" style={{ margin: '12px 0 0' }}>{b.notes[goal]}</p>
+          </div>
+          {plan.days.map((d, di) => (
+            <div className="day" key={d.id}>
+              <h3>{b.day(di + 1, d.kind)}</h3>
+              {d.exercises.length === 0 && <p className="note">{b.empty}</p>}
+              {d.exercises.map((x, ei) => {
+                const nm = nameOf(x.i, lang)
+                return (
+                  <div className="ex" key={x.i}>
+                    <img className="thumb" src={IMG_BASE + exById(x.i).m} alt="" width="56" height="56" loading="lazy" />
+                    <div className="nm"><b>{nm}</b><span>{sub(x)}</span></div>
+                    <div className="sr">{x.sets} × {x.reps}</div>
+                    <button aria-label={b.swapOf(nm)} onClick={() => setPicking({ day: di, idx: ei })}>{b.swap}</button>
+                    <button aria-label={`${b.remove} ${nm}`} onClick={() => edit(di, ex => ex.filter((_, j) => j !== ei))}>✕</button>
+                  </div>
+                )
+              })}
+              <button className="btn ghost sm" onClick={() => setPicking({ day: di, idx: null })}>+ {b.add}</button>
+            </div>
+          ))}
+          <div className="actions">
+            <button className="btn" onClick={pdf} disabled={busy}>{b.pdf}{busy ? '…' : ''}</button>
+            <button className="btn ghost" onClick={regen}>{b.shuffle}</button>
+            <a className="btn ghost" href={BOT_URL} rel="noopener">{b.track(BOT)}</a>
+          </div>
+        </div>
+      )}
+      {picking && <Picker lang={lang} onPick={onPick} onClose={() => setPicking(null)} />}
+    </>
+  )
+}

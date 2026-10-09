@@ -1,0 +1,6 @@
+# Separate from the main stack on purpose: `docker compose up -d --build` in this folder.
+services:
+  site:
+    build: .
+    restart: unless-stopped
+    ports: ["127.0.0.1:3000:3000"]
