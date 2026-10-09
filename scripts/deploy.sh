@@ -4,7 +4,7 @@
 #   1. Build the new images while the old containers keep serving.
 #   2. Roll the api: start a second container, wait until it is healthy, then stop the old one.
 #      web re-resolves `api` through Docker DNS every 10s, so requests keep flowing.
-#   3. Recreate web (static nginx, under a second) and anything else that changed.
+#   3. Run the media job first, then swap web alone (a second or two; see below).
 #
 # Needs the docker-rollout plugin for step 2 (https://github.com/Wowu/docker-rollout):
 #   mkdir -p ~/.docker/cli-plugins
@@ -24,5 +24,12 @@ else
   echo "docker-rollout not available or api not running — falling back to up -d" >&2
 fi
 
-docker compose up -d --remove-orphans
+# `web` depends on the one-shot `media` job (exercise pictures), which takes ~25 s to re-check on
+# every run. Left to `up -d`, compose stops the old web FIRST and then waits for media — a half-minute
+# of 502s. So: run media now, while the old web still serves, then swap web alone, without waiting
+# on its dependencies again (they are already up and healthy). The swap is a second or two.
+docker compose up --no-deps --exit-code-from media media
+docker compose up -d --no-deps --remove-orphans web
+# Anything else that changed (a new service, an env change on db): nothing to wait for either.
+docker compose up -d --remove-orphans --no-recreate
 docker compose ps
