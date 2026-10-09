@@ -177,3 +177,26 @@ test('repeated wrong passwords pause sign-in, even for the right password', asyn
   const right = await h.req('POST', '/admin/api/login', { body: { username: 'boss', password: CREDS.ADMIN_PASSWORD } });
   assert.equal(right.status, 429);
 });
+
+test('a workout start is logged once per workout, and shows on the user page and the Workouts filter', async t => {
+  const h = await start(t, { users: [user('u1', 'Ana'), user('u2', 'Bo')] });
+  const mint = uid => { const p = `${uid}:${Date.now() + 86400000}:0`; return `gymsid=${p}.${crypto.createHmac('sha256', SECRET).update(p).digest('base64url')}`; };
+  const beat = (uid, body) => h.req('POST', '/api/activity', { body: { active: true, exIdx: 0, exTotal: 5, setsDone: 0, setsTotal: 15, ...body }, cookie: mint(uid) });
+  const first = Date.now() - 60000;
+  assert.equal((await beat('u1', { name: 'Leg Day', startedAt: first })).status, 200);
+  assert.equal((await beat('u1', { name: 'Leg Day', startedAt: first, setsDone: 3 })).status, 200);   // same workout, still on screen
+  assert.equal((await beat('u1', { name: 'Leg Day', startedAt: first, setsDone: 6 })).status, 200);
+  assert.equal((await beat('u2', { name: 'Push', startedAt: first })).status, 200);
+  assert.equal((await beat('u1', { name: 'Pull', startedAt: first + 3600000 })).status, 200);         // a second workout
+  await new Promise(r => setTimeout(r, 200));
+  const starts = (await h.db.audit()).filter(x => x.ev === 'workout.started');
+  assert.deepEqual(starts.map(x => `${x.name}:${x.msg}`), ['Ana:Leg Day', 'Bo:Push', 'Ana:Pull']);
+
+  const { cookie } = await h.login();
+  const mine = (await h.req('GET', '/admin/api/user?id=u1', { cookie })).json;
+  assert.deepEqual(mine.events.filter(e => e.ev === 'workout.started').map(e => e.msg).sort(), ['Leg Day', 'Pull']);
+  assert.ok(mine.events.every(e => e.uid === 'u1' || e.tgt === 'u1'), 'only this profile’s events');
+  const wk = (await h.req('GET', '/admin/api/audit?cat=workout', { cookie })).json;
+  assert.equal(wk.events.length, 3);
+  assert.equal((await h.req('GET', '/admin/api/audit?cat=workout&uid=u2', { cookie })).json.events.length, 1);
+});

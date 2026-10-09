@@ -143,14 +143,16 @@ export function createAdminSite({ store, secret, username, password, secure, rea
       const user = id && await store.admin.user(id);
       if (!user) return send(res, 404, { error: 'no such user' });
       return send(res, 200, {
-        user, clients: await store.admin.clientsOf(id), workouts: await store.admin.recentWorkouts(id, 20), now: Date.now()
+        user, clients: await store.admin.clientsOf(id), workouts: await store.admin.recentWorkouts(id, 20),
+        events: (await store.audit.page({ uid: id, limit: 30 })).rows, now: Date.now()
       });
     }
     if (path === '/admin/api/audit' && req.method === 'GET') {
       const q = url.searchParams;
       const limit = num(q.get('limit'), 50, 1, 200);
       const { rows, total } = await store.audit.page({
-        cat: /^[a-z]{1,20}$/.test(q.get('cat') || '') ? q.get('cat') : '', before: +q.get('before') || null, limit
+        cat: /^[a-z]{1,20}$/.test(q.get('cat') || '') ? q.get('cat') : '', before: +q.get('before') || null, limit,
+        uid: wanted(q.get('uid'))
       });
       return send(res, 200, { events: rows, total, nextBefore: rows.length === limit ? rows[rows.length - 1].id : null });
     }
@@ -300,7 +302,7 @@ const pages = {
       let d; try { d = await api('user?id=' + encodeURIComponent(id)); } catch { $('#app').replaceChildren(el('div', { class: 'card empty' }, 'No such user.')); return; }
       const u = d.user;
       const kv = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
-      $('#app').replaceChildren(
+      $('#app').replaceChildren(...[
         el('div', { class: 'card' }, el('h1', {}, u.name, ' ', status(u), u.role === 'trainer' ? [' ', badge('trainer')] : null),
           el('dl', { class: 'kv' }, kv('Telegram', tg(u)), kv('Trainer', u.trainerName || '—'), kv('Joined', when(Date.parse(u.created))),
             kv('Last sync', when(u.lastSync)), kv('Workouts', u.workouts), kv('Last workout', day(u.lastWorkout)),
@@ -311,7 +313,8 @@ const pages = {
         d.clients.length ? el('div', { class: 'card' }, el('h1', {}, 'Clients (' + d.clients.length + ')'),
           table(['Name', 'Workouts', 'Last workout', 'Last sync', 'Status'], d.clients.map(c => el('tr', {}, el('td', {}, userLink(c)), el('td', {}, c.workouts), el('td', {}, day(c.lastWorkout)), el('td', {}, ago(c.lastSync, d.now)), el('td', {}, status(c)))))) : null,
         el('div', { class: 'card' }, el('h1', {}, 'Recent workouts'),
-          table(['Date', 'Workout', 'Exercises', 'Minutes', 'Volume'], d.workouts.map(w => el('tr', {}, el('td', {}, day(w.d)), el('td', {}, w.name || '—'), el('td', {}, w.exercises ?? '—'), el('td', {}, w.minutes ?? '—'), el('td', {}, w.vol ?? '—'))), 'No workouts yet.')));
+          table(['Date', 'Workout', 'Exercises', 'Minutes', 'Volume'], d.workouts.map(w => el('tr', {}, el('td', {}, day(w.d)), el('td', {}, w.name || '—'), el('td', {}, w.exercises ?? '—'), el('td', {}, w.minutes ?? '—'), el('td', {}, w.vol ?? '—'))), 'No workouts yet.')),
+        el('div', { class: 'card' }, el('h1', {}, 'Activity'), eventsTable(d.events), el('p', { class: 'pager' }, el('a', { href: '/admin/activity' }, 'All activity →')))].filter(Boolean));
     };
     await load();
   },
@@ -319,7 +322,7 @@ const pages = {
   async activity() {
     let cat = ''; let before = null;
     const body = el('div'); const more = el('div', { class: 'pager' });
-    const filter = el('select', {}, [['', 'Everything'], ['fail', 'Failures'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['trainer', 'Trainer']].map(([v, t]) => el('option', { value: v }, t)));
+    const filter = el('select', {}, [['', 'Everything'], ['fail', 'Failures'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['trainer', 'Trainer'], ['workout', 'Workouts']].map(([v, t]) => el('option', { value: v }, t)));
     filter.addEventListener('change', () => { cat = filter.value; before = null; body.replaceChildren(); load(); });
     $('#app').replaceChildren(el('div', { class: 'card' }, el('div', { class: 'bar' }, filter), body, more));
     async function load() {

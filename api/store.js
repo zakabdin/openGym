@@ -578,8 +578,10 @@ export async function openStore({ url, schema, log = console } = {}) {
       );
     },
     // Newest first, paged by id. `cat` is 'fail' or an event family ('auth', 'admin', …).
-    async page({ cat = '', before = null, limit = 100 } = {}) {
+    async page({ cat = '', before = null, limit = 100, uid = null } = {}) {
       const where = []; const p = [];
+      // One profile's events: the ones it caused and the ones done to it (an admin's disable).
+      if (uid) { p.push(uid); where.push(`(uid = $${p.length} OR tgt = $${p.length})`); }
       if (cat === 'fail') where.push('NOT ok');
       else if (cat) { p.push(cat.replace(/[\\%_]/g, '\\$&') + '.%'); where.push(`ev LIKE $${p.length}`); }
       const base = where.length ? 'WHERE ' + where.join(' AND ') : '';

@@ -2371,6 +2371,13 @@ const routes = {
     if (!user) return json(res, 401, { error: 'not signed in' });
     const body = await readBody(req);
     if (body.active) {
+      // A workout starts once: the first heartbeat of a session, or one whose start time is not the
+      // one the last heartbeat carried. The client sends the same `startedAt` for the whole workout.
+      const prev = livePresence(user.id);
+      const startedAt = +body.startedAt || 0;
+      if (!prev || (startedAt && prev.startedAt !== startedAt)) {
+        audit(req, 'workout.started', { user, msg: text(body.name).slice(0, 60) || null });
+      }
       presence.set(user.id, {
         name: text(body.name).slice(0, 60),
         exIdx: +body.exIdx || 0, exTotal: +body.exTotal || 0,
