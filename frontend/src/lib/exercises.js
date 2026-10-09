@@ -132,8 +132,14 @@ export function matchesExerciseSearch(exercise, query) {
 const ENV = import.meta.env || {}
 const IMG_BASE = ENV.VITE_IMG_BASE || 'img/'
 const GIF_BASE = ENV.VITE_GIF_BASE || 'gif/'
-export const imgSrc = ex => IMG_BASE + ex.img
-export const gifSrc = ex => GIF_BASE + ex.gif
+// The pictures are sharpened once on the server (web/upscale-media.sh) and keep their file names,
+// while the service worker keeps them for good and nginx lets a browser keep them for 30 days: a
+// device that already has the soft 180 px version would never ask again. A version in the query
+// is a different URL to both, so everyone fetches the sharp one once. Bump it when the files
+// change under their names. Only for the app's own copy — a CDN base is somebody else's files.
+const MEDIA_REV = '?v=2'
+export const imgSrc = ex => IMG_BASE + ex.img + (IMG_BASE === 'img/' ? MEDIA_REV : '')
+export const gifSrc = ex => GIF_BASE + ex.gif + (GIF_BASE === 'gif/' ? MEDIA_REV : '')
 
 // Cardio exercises log time + speed instead of weight × reps.
 export const isCardio = idOrEx => (typeof idOrEx === 'string' ? EXIDX[idOrEx] : idOrEx)?.bp === 'cardio'

@@ -35,11 +35,12 @@ describe('auditCat', () => {
   it('survives a missing event name', () => {
     expect(auditCat(undefined)).toBe('')
   })
+  // `workout` is the fifth: a workout was started. Also no chip, so it shows under All.
   // `trainer` is the fourth (trainer links and programs), with no chip either.
   // `media` is the third: the photo and video clean-up and throttle. It has no chip of its own —
   // those rows show under All, and a throttle under Failed.
-  it('puts every known event in auth, admin, media or trainer', () => {
-    expect([...new Set(EVENTS.map(auditCat))].sort()).toEqual(['admin', 'auth', 'media', 'trainer'])
+  it('puts every known event in auth, admin, media, trainer or workout', () => {
+    expect([...new Set(EVENTS.map(auditCat))].sort()).toEqual(['admin', 'auth', 'media', 'trainer', 'workout'])
   })
 })
 

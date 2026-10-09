@@ -14,6 +14,10 @@ services:
     volumes:
       - ./media/img:/out/img
       - ./media/gif:/out/gif
+    environment:
+      # Side, in pixels, the downloaded pictures are sharpened to (they ship at 180). 270 by
+      # default; 360 is crisper and about twice the bytes; 0 leaves them as downloaded.
+      - MEDIA_UPSCALE_PX=${MEDIA_UPSCALE_PX:-270}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -33,6 +37,8 @@ services:
         else
           echo "✓ Exercise media already present — skipping download."
         fi
+        # Only files still at the downloaded 180 px are touched, so this is a no-op after the first run.
+        upscale-media /out
     restart: "no"
 
   # PostgreSQL: everything the API stores about people — accounts, passkeys, push subscriptions,

@@ -25,7 +25,7 @@ describe('Thumb', () => {
   it('shows the still, and the neutral tile once it fails to load', () => {
     const { host } = mount(<Thumb ex={{ id: 'a', img: 'a.jpg' }} />)
     const img = host.querySelector('img.thumb')
-    expect(img.getAttribute('src')).toMatch(/a\.jpg$/)
+    expect(img.getAttribute('src')).toMatch(/a\.jpg(\?v=\d+)?$/)
     act(() => { img.dispatchEvent(new Event('error')) })
     expect(host.querySelector('img')).toBeNull()
     expect(host.querySelector('.thumb.thumb-x')).toBeTruthy()
@@ -35,7 +35,7 @@ describe('Thumb', () => {
     const { host, root } = mount(<Thumb ex={{ id: 'a', img: 'a.jpg' }} />)
     act(() => { host.querySelector('img').dispatchEvent(new Event('error')) })
     act(() => root.render(<Thumb ex={{ id: 'b', img: 'b.jpg' }} />))
-    expect(host.querySelector('img.thumb').getAttribute('src')).toMatch(/b\.jpg$/)
+    expect(host.querySelector('img.thumb').getAttribute('src')).toMatch(/b\.jpg(\?v=\d+)?$/)
   })
 
   it('an exercise without media has the tile from the start', () => {

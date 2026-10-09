@@ -32,7 +32,7 @@ docker compose pull   # prebuilt images from GitLab's registry (amd64 + arm64; t
 docker compose up -d
 ```
 
-- First start downloads the exercise images/GIFs (~140 MB) once into `media/img` and `media/gif`.
+- First start downloads the exercise images/GIFs (~140 MB) once into `media/img` and `media/gif`. They ship at 180×180 pixels, so the same step sharpens them once to 270×270 (set `MEDIA_UPSCALE_PX=360` for more, or `0` to keep them as downloaded) — a few minutes and about 250 MB for the GIFs.
 - Open **http://localhost:8080** and create a profile with a passkey.
 - Rather build from source than pull prebuilt images? Skip `docker compose pull` and run
   `docker compose up -d --build` instead — no Node needed locally either way.
