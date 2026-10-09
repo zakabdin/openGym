@@ -2884,6 +2884,29 @@ paths:
         '401': { description: initData is not genuine or is stale }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/telegram/document:
+    post:
+      tags: [telegram]
+      operationId: telegramDocument
+      summary: "Drop a PDF into the signed-in person's own Telegram chat"
+      description: |
+        The Mini App makes a PDF of the plan or today's workout (the bot's `/plan` and `/today` buttons
+        open it for that) and posts it here as `{ name, data (base64), caption? }`. The server checks it is
+        a PDF under 3 MB and sends it to the Telegram chat of the signed-in profile — never to another
+        chat. At most 12 an hour per profile. 400 without a Telegram profile or with a bad file, 502
+        when Telegram refuses (the person has not pressed Start in the bot). 404 without a bot token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [data], properties: { name: { type: string }, data: { type: string, description: base64 }, caption: { type: string } } }
+      responses:
+        '200': { description: Sent. }
+        '400': { description: not a PDF, too big, or no Telegram chat }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { description: too many this hour }
+        '502': { description: Telegram refused the file }
+
   /api/telegram/webhook:
     post:
       tags: [telegram]

@@ -21,7 +21,7 @@ const C = { sil: '#e9ebf0', ink: '#16181d', dim: '#6b7180', faint: '#a2a8b6', li
  * `geo` is the body outline ({ front, back }, each a viewBox and paths): with it every routine gets
  * the muscle figure the editor shows, shaded by how hard each muscle is worked.
  */
-export function layoutPlan(data, newPage, images = new Map(), geo = null) {
+export function layoutPlan(data, newPage, images = new Map(), geo = null, { pic = PIC, figH = 400, noFigure = false } = {}) {
   let ctx = null, y = 0, pages = 0
   const left = M, right = PX_W - M, bottom = PX_H - M - 40
   const rtl = !!data.rtl
@@ -81,7 +81,7 @@ export function layoutPlan(data, newPage, images = new Map(), geo = null) {
   if (!data.routines.length) put(data.none, startX, y + 28, { size: 28, color: C.faint })
 
   const indent = 28
-  const FIG_H = 400, FIG_GAP = 56   // the muscle figure's height, and the space between front and back
+  const FIG_H = figH, FIG_GAP = 56   // the muscle figure's height, and the space between front and back
   data.routines.forEach(r => {
     // The routine's heading never sits alone at the foot of a page: it moves with its first row.
     const rowsOf = r.units.length ? r.units : [{ empty: true }]
@@ -97,9 +97,11 @@ export function layoutPlan(data, newPage, images = new Map(), geo = null) {
       room(h)
       drawRow(u, r)
     })
-    if (geo && r.hits) drawHits(r.hits, r)
+    if (geo && !noFigure && r.hits) drawHits(r.hits, r)
     y += 34
   })
+
+  if (geo && !noFigure && data.hitsAll) { y += 8; drawHits(data.hitsAll, { bare: true }) }
 
   // "What this session hits": the front and back of the body, each muscle shaded like the editor does
   // (the app's own five steps, from the paper's grey up to the person's accent), and the muscles by name.
@@ -140,14 +142,14 @@ export function layoutPlan(data, newPage, images = new Map(), geo = null) {
   // pushes the text along; a row is never shorter than its picture.
   function itemMetrics(it, inset) {
     const inner = right - left - 2 * indent
-    const pic = images.get(it.exId) || null
-    const shift = pic ? PIC + PIC_GAP : 0
+    const img = images.get(it.exId) || null
+    const shift = img ? pic + PIC_GAP : 0
     const schemeW = width(it.scheme, 28, 400)
     const nameMax = Math.max(200, inner - inset - shift - schemeW - 40)
     const nameLines = wrap(it.name + (it.part ? '  ' + it.part : ''), nameMax, 30, 500)
     const noteLines = it.note ? wrap(it.note, inner - inset - shift, 22, 400) : []
     const text = nameLines.length * 40 + 8 + noteLines.length * 30
-    return { pic, shift, nameLines, noteLines, height: Math.max(text, pic ? PIC : 0) + 12 }
+    return { pic: img, shift, nameLines, noteLines, height: Math.max(text, img ? pic : 0) + 12 }
   }
   // How tall a row will be, measured the same way it is drawn, so a page break is decided first.
   function rowHeight(u) {
@@ -157,15 +159,15 @@ export function layoutPlan(data, newPage, images = new Map(), geo = null) {
   }
 
   function drawPicture(img, x, yy) {
-    const bx = rtl ? x - PIC : x
+    const bx = rtl ? x - pic : x
     ctx.save?.()
-    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, PIC, PIC, 14) : ctx.rect?.(bx, yy, PIC, PIC)
+    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, pic, pic, 14) : ctx.rect?.(bx, yy, pic, pic)
     ctx.clip?.()
-    ctx.fillStyle = '#fff'; ctx.fillRect(bx, yy, PIC, PIC)
-    ctx.drawImage(img, bx, yy, PIC, PIC)
+    ctx.fillStyle = '#fff'; ctx.fillRect(bx, yy, pic, pic)
+    ctx.drawImage(img, bx, yy, pic, pic)
     ctx.restore?.()
     ctx.strokeStyle = C.line; ctx.lineWidth = 2
-    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, PIC, PIC, 14) : ctx.rect?.(bx, yy, PIC, PIC); ctx.stroke?.()
+    ctx.beginPath?.(); ctx.roundRect ? ctx.roundRect(bx, yy, pic, pic, 14) : ctx.rect?.(bx, yy, pic, pic); ctx.stroke?.()
   }
 
   function drawRow(u, r) {
@@ -267,7 +269,7 @@ function loadImages(data, timeoutMs = 8000) {
 
 /** Render the plan to a PDF Blob. Needs a browser canvas. `opts.pictures` puts each exercise's picture in. */
 export async function renderPlanPdf(S, owner, opts = {}) {
-  const { pictures, ...printOpts } = opts
+  const { pictures, onePage, ...printOpts } = opts
   // "t.me/<bot>" from the server's config; an instance without a bot just says who made it.
   let link
   try { const { useStore } = await import('../store/useStore.js'); const bot = (await useStore.getState().loadConfig())?.telegram_bot; if (bot) link = 't.me/' + bot } catch { /* no server */ }
@@ -277,14 +279,24 @@ export async function renderPlanPdf(S, owner, opts = {}) {
   let geo = null
   if (pictures) { try { const g = (await import('./body-paths.js')).default; geo = g[data.body] || g.male } catch { /* a PDF without the figure */ } }
   const canvases = []
-  layoutPlan(data, () => {
+  const newPage = () => {
     const c = document.createElement('canvas')
     c.width = PX_W; c.height = PX_H
     const ctx = c.getContext('2d')
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PX_W, PX_H)
     canvases.push(c)
     return ctx
-  }, images, geo)
+  }
+  // `onePage` (today's workout): the fullest version that fits on one page. Smaller pictures and figure
+  // first, then no pictures, then no figure; if even that spills over, it flows onto a second page.
+  const tries = onePage
+    ? [{}, { pic: 84, figH: 280 }, { figH: 260, useImages: false }, { useImages: false, noFigure: true }]
+    : [{}]
+  for (const [i, { useImages = true, ...fit }] of tries.entries()) {
+    canvases.length = 0
+    const n = layoutPlan(data, newPage, useImages ? images : new Map(), geo, fit)
+    if (n === 1 || i === tries.length - 1) break
+  }
   const pages = []
   for (const c of canvases) {
     const jpeg = new Uint8Array(await (await canvasBlob(c, 'image/jpeg', 0.92)).arrayBuffer())
@@ -321,3 +333,24 @@ export async function sharePlanPdf(S, owner, opts) {
 const PICS_KEY = 'og_pdf_pictures'
 export const getPdfPictures = () => { try { return localStorage.getItem(PICS_KEY) !== '0' } catch { return true } }
 export const setPdfPictures = on => { try { localStorage.setItem(PICS_KEY, on ? '1' : '0') } catch { /* private mode */ } }
+
+/** A Blob as base64 (what POST /api/telegram/document takes), in pieces so a big file never becomes one giant string call. */
+export async function blobToBase64(blob) {
+  const u8 = new Uint8Array(await blob.arrayBuffer())
+  let out = ''
+  for (let i = 0; i < u8.length; i += 0x8000) out += String.fromCharCode(...u8.subarray(i, i + 0x8000))
+  return btoa(out)
+}
+
+/**
+ * The PDF of the whole plan (`kind: 'plan'`) or of today's workout (`'today'`: the routines planned for
+ * today, one page, or null on a day with none) → { blob, title } | null. Used by the bot's PDF buttons.
+ */
+export async function makePdfFor(kind, S, owner, { pictures = true, today } = {}) {
+  if (kind === 'today') {
+    const ids = (today || []).filter(Boolean)
+    if (!ids.length) return null
+    return renderPlanPdf(S, owner, { pictures, routineIds: ids, onePage: true })
+  }
+  return renderPlanPdf(S, owner, { pictures })
+}

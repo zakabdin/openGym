@@ -86,6 +86,11 @@ test('/plan lists the week from the profile\'s own weekday, marking today', asyn
   assert.match(t, /▸ Wednesday: Pull/);
   assert.match(t, /Tuesday: Rest/);
   assert.ok(t.indexOf('Monday') < t.indexOf('Sunday'));
+  // a PDF of the whole plan, made in the app and dropped into this chat
+  const row = w.sent[0].reply_markup.inline_keyboard[0];
+  assert.equal(row[0].web_app.url, URL_);
+  assert.equal(row[1].text, '📄 PDF');
+  assert.equal(row[1].web_app.url, URL_ + '/#/pdf/plan');
 });
 
 test('/plan with nothing planned points to the app', async () => {
@@ -105,6 +110,15 @@ test('/today shows the routines for today, a one-off change beating the week, an
   w.states.u1 = S({ week: { 1: ['a'] } });
   await w.say('/today');
   assert.match(w.sent[2].text, /Rest day today/);
+  assert.equal(w.sent[2].reply_markup.inline_keyboard[0].length, 1, 'no PDF button on a rest day');
+  assert.equal(w.sent[0].reply_markup.inline_keyboard[0][1].web_app.url, URL_ + '/#/pdf/today');
+  assert.equal(w.sent[1].reply_markup.inline_keyboard[0][1].web_app.url, URL_ + '/#/pdf/today');
+});
+
+test('/plan with no plan offers the app but no PDF', async () => {
+  const w = world({ users: [ana], states: { u1: S({ week: {}, routines: [] }) } });
+  await w.say('/plan');
+  assert.equal(w.sent[0].reply_markup.inline_keyboard[0].length, 1);
 });
 
 test('/last, /progress and /weight read the history', async () => {

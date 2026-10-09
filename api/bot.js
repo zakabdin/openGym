@@ -60,9 +60,14 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       return j.result;
     } catch (e) { log.error?.('telegram', method, e.message); return null; }
   };
-  const send = (chatId, text, { button, lang = 'en' } = {}) => call('sendMessage', {
+  // `pdf: 'plan' | 'today'` adds a PDF button: it opens the app on a screen that makes the PDF and
+  // drops it into this chat (the PDF needs the exercise catalogue, so it is made in the app).
+  const send = (chatId, text, { button, pdf, lang = 'en' } = {}) => call('sendMessage', {
     chat_id: chatId, text: String(text).slice(0, 3900), disable_web_page_preview: true,
-    ...(button && hasButton ? { reply_markup: { inline_keyboard: [[{ text: tr(lang, 'openApp'), web_app: { url: appUrl } }]] } } : {})
+    ...(button && hasButton ? { reply_markup: { inline_keyboard: [[
+      { text: tr(lang, 'openApp'), web_app: { url: appUrl } },
+      ...(pdf ? [{ text: '📄 PDF', web_app: { url: `${appUrl}/#/pdf/${pdf}` } }] : [])
+    ]] } } : {})
   });
 
   const commandList = (lang, withClients = true) => COMMANDS
@@ -87,7 +92,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
         rows.push(`${wd === t.wd ? '▸ ' : '   '}${dayName(lang, wd)}: ${names.length ? names.join(' + ') : tr(lang, 'rest')}`);
       }
       const any = routines.length && Object.values(S.week || {}).some(v => idsOf(v).length);
-      return { text: any ? `${tr(lang, 'week')}\n\n${rows.join('\n')}` : tr(lang, 'noPlan'), button: true };
+      return { text: any ? `${tr(lang, 'week')}\n\n${rows.join('\n')}` : tr(lang, 'noPlan'), button: true, pdf: any ? 'plan' : undefined };
     },
 
     async today({ lang, S }) {
@@ -96,7 +101,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       const done = list(S.workouts).some(w => w.d === t.date);
       if (!routines.length) return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${tr(lang, 'restDay')}`, button: true };
       const lines = routines.map(r => `• ${r.name} — ${tr(lang, 'exercisesN', list(r.ex).length)}`);
-      return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${lines.join('\n')}${done ? '\n\n' + tr(lang, 'doneToday') : ''}`, button: true };
+      return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${lines.join('\n')}${done ? '\n\n' + tr(lang, 'doneToday') : ''}`, button: true, pdf: 'today' };
     },
 
     async last({ lang, S }) {
@@ -218,7 +223,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
     if (!OPEN.has(name) && (!user || user.disabled || !S)) return void send(chatId, tr(lang, 'notLinked'), { button: true, lang });
     const out = await handlers[name]({ lang, user, S: S || {}, arg: (cmd[2] || '').trim().split(/\s+/)[0] || '', chatId });
     if (out?.lang) lang = out.lang;
-    await send(chatId, out.text, { button: out.button, lang });
+    await send(chatId, out.text, { button: out.button, pdf: out.pdf, lang });
   }
 
   /**

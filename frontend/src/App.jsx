@@ -31,6 +31,7 @@ import Home from './views/Home.jsx'
 import CheckIn from './views/CheckIn.jsx'
 import Plan from './views/Plan.jsx'
 import RoutineEdit from './views/RoutineEdit.jsx'
+import PdfToChat from './views/PdfToChat.jsx'
 import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
 import History from './views/History.jsx'
@@ -200,6 +201,7 @@ function Shell() {
               <Route path="/coach/intake" element={<CoachIntake />} />
               <Route path="/coach/proposal" element={<Navigate to="/coach" replace />} />
               <Route path="/coach/setup" element={<CoachSetup />} />
+              <Route path="/pdf/:kind" element={<PdfToChat />} />
               <Route path="/team" element={<Team />} />
               <Route path="/team/c/:id" element={<TeamClient />} />
               <Route path="/team/plan/:id" element={<RoutineEdit tpl />} />

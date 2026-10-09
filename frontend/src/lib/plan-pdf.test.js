@@ -169,3 +169,58 @@ describe('the footer', () => {
     expect(f('t.me/x')).not.toContain('duarte')
   })
 })
+
+describe("today's workout on one page", () => {
+  const geo2 = { front: { vb: '0 95 727 1280', p: { chest: ['M0 0'] } }, back: { vb: '718 95 727 1280', p: { chest: ['M3 3'] } } }
+  const big = (n, per) => ({ unit: 'kg', week: {}, routines: Array.from({ length: n }, (_, i) => ({ id: 'r' + i, name: 'R' + i, ex: Array.from({ length: per }, () => ({ id: '0025', sets: 3, reps: 10, weight: 40 })) })) })
+  const imgs = new Map([['0025', { id: 'A' }]])
+  it('gives a day with several routines one combined figure instead of one under each', () => {
+    const d = planPrintData(big(3, 2), '', { routineIds: ['r0', 'r1', 'r2'] })
+    expect(d.routines.every(r => r.hits === null)).toBe(true)
+    expect(d.hitsAll.names.length).toBeGreaterThan(0)
+    const one = planPrintData(big(3, 2), '', { routineIds: ['r0'] })
+    expect(one.hitsAll).toBeNull()
+    expect(one.routines[0].hits).not.toBeNull()
+    const { pages, newPage } = stubPages()
+    layoutPlan(d, newPage, new Map(), geo2)
+    expect(all(pages).join('|').match(/WHAT THIS SESSION HITS/g)).toHaveLength(1)
+  })
+  it('each smaller setting takes less room, and the last two drop pictures and the figure', () => {
+    const d = planPrintData(big(2, 7), '', { routineIds: ['r0', 'r1'] })
+    const count = (imgsIn, opts) => { const { newPage } = stubPages(); return layoutPlan(d, newPage, imgsIn, geo2, opts) }
+    const normal = count(imgs, {})
+    const small = count(imgs, { pic: 84, figH: 280 })
+    const text = count(new Map(), { figH: 260 })
+    const bare = count(new Map(), { noFigure: true })
+    expect(normal).toBeGreaterThanOrEqual(small)
+    expect(small).toBeGreaterThanOrEqual(text)
+    expect(text).toBeGreaterThanOrEqual(bare)
+    expect(bare).toBe(1)
+    expect(normal).toBeGreaterThan(1)   // the full version does not fit: this is why the ladder exists
+  })
+  it('draws no figure at all when told not to', () => {
+    const { pages, newPage } = stubPages()
+    layoutPlan(planPrintData(big(2, 2), '', { routineIds: ['r0', 'r1'] }), newPage, new Map(), geo2, { noFigure: true })
+    expect(all(pages).join('|')).not.toMatch(/WHAT THIS SESSION HITS/)
+  })
+})
+
+describe("today's workout", () => {
+  it('is just the routines asked for, named together, with no week', () => {
+    const S2 = { ...S(3), week: { 1: ['a'] } }
+    const d = planPrintData(S2, 'Ana', { routineIds: ['a', 'r1'] })
+    expect(d.week).toBeNull()
+    expect(d.routines.map(r => r.name)).toEqual(['Routine 0', 'Routine 1'])
+    expect(d.title).not.toBe('Weekly Training Plan')
+    expect(d.sub).toMatch(/4 exercises/)
+    const one = planPrintData(S2, 'Ana', { routineIds: ['r1'] })
+    expect(one.title).toBe('Routine 1')
+    expect(one.routines[0].bare).toBe(true)
+  })
+  it('lays out on one page', () => {
+    const { pages, newPage } = stubPages()
+    const n = layoutPlan(planPrintData(S(3), '', { routineIds: ['a'] }), newPage)
+    expect(n).toBe(1)
+    expect(all(pages).join('|')).not.toMatch(/Week schedule/i)
+  })
+})

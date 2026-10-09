@@ -373,11 +373,15 @@ function weekHTML(S) {
  * The same printout as planPrintHTML, as plain data — what the PDF is drawn from (lib/plan-pdf.js),
  * so the two never word anything differently. `routineId` is that one routine on its own.
  */
-export function planPrintData(S, owner, { routineId, link } = {}) {
+export function planPrintData(S, owner, { routineId, routineIds, link } = {}) {
   const unit = S.unit || 'kg'
   const speedUnit = speedUnitOf(S)
-  const single = routineId ? (S.routines || []).find(r => r.id === routineId) || null : null
-  const routines = routineId ? [single].filter(Boolean) : (S.routines || []).filter(r => r.ex && r.ex.length)
+  // One routine on its own (`routineId`), or just these routines (`routineIds`, today's session — it
+  // can be two on one day), or the whole plan with its week.
+  const ids = routineIds || (routineId ? [routineId] : null)
+  const picked = ids ? ids.map(id => (S.routines || []).find(r => r.id === id)).filter(Boolean) : null
+  const single = picked && picked.length === 1 ? picked[0] : null
+  const routines = picked || (S.routines || []).filter(r => r.ex && r.ex.length)
   const item = e => {
     const ex = EXIDX[e.id]
     const cap = ex && exerciseNameClass(ex)
@@ -392,19 +396,26 @@ export function planPrintData(S, owner, { routineId, link } = {}) {
   }
   return {
     lang: getLang(), rtl: RTL_LANGS.has(getLang()),
-    title: single ? single.name : t('Weekly Training Plan'),
-    sub: [single ? exCount(single.ex.length) : null, owner, todayISO()].filter(Boolean).join(' · '),
-    week: routineId ? null : weekOrder(weekStartOf(S)).map(d => {
+    title: single ? single.name : picked ? deriveSessionName(picked.map(r => r.name)) : t('Weekly Training Plan'),
+    sub: [picked ? exCount(picked.reduce((n, r) => n + r.ex.length, 0)) : null, owner, todayISO()].filter(Boolean).join(' · '),
+    week: ids ? null : weekOrder(weekStartOf(S)).map(d => {
       const names = [].concat(S.week?.[d] || []).map(id => S.routines.find(x => x.id === id)?.name).filter(Boolean)
       return { day: t(DAYN[d]), value: names.length ? deriveSessionName(names) : '' , rest: t('Rest') }
     }),
     body: S.body === 'female' ? 'female' : 'male',
     accent: ACCENTS[S.accent] || ACCENTS.teal,
     hitsTitle: t('What this session hits'),
+    // A day with several routines gets one figure for the whole day, not one under each.
+    hitsAll: picked && picked.length > 1 ? (() => {
+      const sum = {}
+      picked.forEach(r => { const l = loadOfRoutine(r); for (const [m, v] of Object.entries(l)) sum[m] = (sum[m] || 0) + v })
+      const { worked } = rankOf(sum)
+      return worked.length ? { levels: levelsOf(sum), names: worked.slice(0, 6).map(m => t(MUSCLE_NAME[m])) } : null
+    })() : null,
     routines: routines.map(r => ({
       name: r.name, count: exCount(r.ex.length), bare: !!single,
       // Which muscles the routine works and how hard (the shading of the figure in the editor).
-      hits: (() => {
+      hits: picked && picked.length > 1 ? null : (() => {
         const load = loadOfRoutine(r)
         const { worked } = rankOf(load)
         return worked.length ? { levels: levelsOf(load), names: worked.slice(0, 6).map(m => t(MUSCLE_NAME[m])) } : null

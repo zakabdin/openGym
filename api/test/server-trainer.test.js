@@ -9,6 +9,7 @@ import pg from 'pg';
 import { fileURLToPath } from 'node:url';
 import { boundPort, signInitData, testDb } from './helpers.mjs';
 import { webhookSecret } from '../bot.js';
+import { sendTelegramDocument } from '../telegram.js';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BOT = '123456:TEST-token';
@@ -150,4 +151,41 @@ test('a Telegram sign-in remembers the person\'s Telegram language and refreshes
   assert.equal(await langNow(), 'az');
   assert.equal((await call(h)('POST', '/api/auth/telegram', { initData: mk('ru') })).status, 200);
   assert.equal(await langNow(), 'ru');
+});
+
+test('the PDF drop-off: only for a signed-in Telegram profile, only a real PDF, bounded, and only to its own chat', async t => {
+  const h = await startServer(t);
+  const sign = async id => {
+    const r = await call(h)('POST', '/api/auth/telegram', { initData: initData(id, 'Pdf' + id) });
+    return call(h, r.body.token);
+  };
+  const pdf = '%PDF-1.4\n' + 'x'.repeat(200);
+  const b64 = Buffer.from(pdf).toString('base64');
+  assert.equal((await call(h)('POST', '/api/telegram/document', { data: b64 })).status, 401, 'no session');
+  const ana = await sign(41);
+  assert.equal((await ana('POST', '/api/telegram/document', { data: Buffer.from('not a pdf').toString('base64') })).status, 400, 'not a PDF');
+  assert.equal((await ana('POST', '/api/telegram/document', {})).status, 400, 'nothing');
+  // a chat id in the request is not a thing: the fake bot token means Telegram refuses, which is a 502
+  const sent = await ana('POST', '/api/telegram/document', { name: '../../etc/passwd', data: b64, chat_id: 999 });
+  assert.equal(sent.status, 502, 'accepted and handed to Telegram, which refuses a made-up token');
+  // a dozen an hour
+  let last;
+  for (let i = 0; i < 12; i++) last = await ana('POST', '/api/telegram/document', { data: b64 });
+  assert.equal(last.status, 429);
+  // another profile has its own allowance
+  const bo = await sign(42);
+  assert.notEqual((await bo('POST', '/api/telegram/document', { data: b64 })).status, 429);
+});
+
+test('sendTelegramDocument posts the file as multipart to the chat it was given', async () => {
+  const seen = [];
+  const ok = await sendTelegramDocument('T0KEN', 77, Buffer.from('%PDF-1.4 x'), 'Plan.pdf', 'cap', async (url, init) => { seen.push({ url, form: init.body }); return { ok: true }; });
+  assert.equal(ok, true);
+  assert.equal(seen[0].url, 'https://api.telegram.org/botT0KEN/sendDocument');
+  assert.equal(seen[0].form.get('chat_id'), '77');
+  assert.equal(seen[0].form.get('caption'), 'cap');
+  assert.equal(seen[0].form.get('document').name, 'Plan.pdf');
+  assert.equal(await sendTelegramDocument('T0KEN', 77, Buffer.from('x'), 'a.pdf', '', async () => ({ ok: false })), false);
+  assert.equal(await sendTelegramDocument('T0KEN', 77, Buffer.from('x'), 'a.pdf', '', async () => { throw new Error('net'); }), false);
+  assert.equal(await sendTelegramDocument('', 77, Buffer.from('x'), 'a.pdf'), false);
 });

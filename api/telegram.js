@@ -61,3 +61,19 @@ export async function sendTelegramMessage(botToken, chatId, textBody, fetchImpl 
     return r.ok;
   } catch { return false; }
 }
+
+// A file into one chat (sendDocument). Like the messages above, best effort: false when Telegram says no
+// (the person never pressed Start, or blocked the bot).
+export async function sendTelegramDocument(botToken, chatId, bytes, filename, caption = '', fetchImpl = fetch) {
+  if (!botToken || !chatId || !bytes?.length) return false;
+  try {
+    const form = new FormData();
+    form.append('chat_id', String(chatId));
+    if (caption) form.append('caption', String(caption).slice(0, 1000));
+    form.append('document', new Blob([bytes], { type: 'application/pdf' }), filename);
+    const r = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendDocument`, {
+      method: 'POST', body: form, signal: AbortSignal.timeout(30000)
+    });
+    return r.ok;
+  } catch { return false; }
+}

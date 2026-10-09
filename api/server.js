@@ -30,7 +30,7 @@ import {
   listPasskeys, addPasskeyRecord, renamePasskeyRecord, removePasskeyRecord, passkeyRemovalRefused, MAX_PASSKEYS
 } from './passkeys-store.js';
 import { createDeviceLink, findDeviceLink, burnDeviceLink, dropDeviceLinks } from './device-link.js';
-import { verifyInitData, sendTelegramMessage } from './telegram.js';
+import { verifyInitData, sendTelegramMessage, sendTelegramDocument } from './telegram.js';
 import { createBot, secretOk, pickLang } from './bot.js';
 import { tr as botText } from './bot-i18n.js';
 import {
@@ -257,6 +257,7 @@ async function tgNotify(u, key, ...args) {
   return sendTelegramMessage(TELEGRAM_BOT_TOKEN, u.tg.id, botText(pickLang(S, u.tg.lang), key, ...args));
 }
 // The conversation side of the bot (commands like /plan), answered from this same database.
+const pdfSends = new Map();   // profile id → when it last sent a PDF to its chat (a dozen an hour)
 const bot = TELEGRAM_BOT_TOKEN ? createBot({ store, token: TELEGRAM_BOT_TOKEN, appUrl: ORIGIN.replace(/\/+$/, '') }) : null;
 
 async function sendPush(userId, payload, deviceId) {
@@ -2036,6 +2037,29 @@ const routes = {
       const update = await readBody(req);
       json(res, 200, { ok: true });
       bot.handleUpdate(update).catch(e => console.error('bot update', e.message));
+    },
+
+    // The app makes a PDF (the bot's /plan and /today buttons open it for that) and hands it over to be
+    // dropped into the person's own Telegram chat. Own chat only: the target is the signed-in profile's
+    // Telegram id, never a field of the request. Bounded: a real PDF, under 3 MB, a dozen an hour.
+    'POST /api/telegram/document': async (req, res) => {
+      const user = await readSession(req);
+      if (!user) return json(res, 401, { error: 'not signed in' });
+      if (!user.tg?.id) return json(res, 400, { error: 'this profile has no Telegram chat' });
+      const body = await readBody(req);
+      const bytes = Buffer.from(typeof body.data === 'string' ? body.data : '', 'base64');
+      if (!bytes.length || bytes.length > 3 * 1024 * 1024 || bytes.subarray(0, 5).toString('latin1') !== '%PDF-') {
+        return json(res, 400, { error: 'a PDF under 3 MB is needed' });
+      }
+      const now = Date.now();
+      const recent = (pdfSends.get(user.id) || []).filter(t => now - t < 3600000);
+      if (recent.length >= 12) return json(res, 429, { error: 'too many PDFs this hour' });
+      pdfSends.set(user.id, [...recent, now]);
+      const name = (text(body.name).replace(/\.pdf$/i, '').replace(/[^\p{L}\p{N}._ -]+/gu, ' ').trim().slice(0, 60) || 'openGym') + '.pdf';
+      const ok = await sendTelegramDocument(TELEGRAM_BOT_TOKEN, user.tg.id, bytes, name, text(body.caption).slice(0, 200));
+      audit(req, 'workout.pdf', { user, ok, msg: name });
+      if (!ok) return json(res, 502, { error: 'Telegram did not take the file — open the bot chat and press Start' });
+      json(res, 200, { ok: true });
     },
 
     'POST /api/auth/telegram': async (req, res) => {

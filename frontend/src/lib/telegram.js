@@ -55,3 +55,6 @@ export function setTelegramChrome(color) {
   if (!IN_TELEGRAM || !w) return
   for (const k of ['setHeaderColor', 'setBackgroundColor', 'setBottomBarColor']) { try { w[k]?.(color) } catch { /* optional */ } }
 }
+
+// Closes the mini app and returns to the chat (after a PDF has been dropped into it).
+export const telegramClose = () => { try { wa()?.close() } catch { /* optional */ } }
