@@ -48,6 +48,10 @@ function StartChooser() {
   const others = S.routines.filter(r => !idSet.has(r.id))
   return <div className="narrow">
     <div className="hdr"><div><h1>{t('Start workout')}</h1><div className="sub">{t(DAYN[new Date().getDay()])} — {todayRoutines.length ? t('today is {0}', todayName) : t('rest day, but no one’s stopping you')}</div></div></div>
+    {!S.routines.length && <div className="card" style={{ textAlign: 'center', padding: '24px 18px' }}>
+      <div className="empty" style={{ padding: 0, marginBottom: 14 }}><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
+      <Button variant="primary" onClick={() => nav('/plan')}>{t('Build a plan first')}</Button>
+    </div>}
     {todayRoutines.length > 0 && <div className="card" style={{ borderColor: 'var(--acc)' }}>
       <h2 className="accent">{t("Today's plan")}{todayOvr ? ' · ' + t('rescheduled') : ''}</h2>
       <div className="row between" style={{ marginBottom: 12 }}>
@@ -63,7 +67,6 @@ function StartChooser() {
         <span className="tag acc">{t('Start')}</span></div>)}</div></>}
     <div style={{ height: 14 }} />
     <Button icon="shuffle" onClick={() => startFlow([])}>{t('Freestyle workout (pick as you go)')}</Button>
-    {!S.routines.length && <><div style={{ height: 10 }} /><Button variant="primary" onClick={() => nav('/plan')}>{t('Build a plan first')}</Button></>}
   </div>
 }
 

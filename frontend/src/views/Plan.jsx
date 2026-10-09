@@ -69,7 +69,16 @@ export default function Plan() {
       <Icon name="chevronRight" className="coach-cta-chev" />
     </button>}
 
-    <div className="cols"><div>
+    {/* Nothing to put on a day yet: say so first, with the two ways forward, instead of seven
+        "Rest" rows and the way out further down the page. */}
+    {!S.routines.length && <div className="card" style={{ textAlign: 'center', padding: '28px 18px' }}>
+      <div className="empty" style={{ padding: 0, marginBottom: 16 }}><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
+      <Button variant="primary" icon="plus" onClick={addRoutine}>{t('New routine')}</Button>
+      <div style={{ height: 8 }} />
+      <Button icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
+    </div>}
+
+    {S.routines.length > 0 && <div className="cols"><div>
       <h4 className="sec">{t('Week schedule')}</h4>
       <div className="list" style={{ display: 'flex', flexDirection: 'column' }}>
         {weekOrder(weekStartOf(S)).map(d => {
@@ -106,7 +115,7 @@ export default function Plan() {
         <h4 className="sec" style={{ margin: 0 }}>{t('Routines')}</h4>
         <Button size="sm" variant="tinted" icon="plus" onClick={addRoutine}>{t('New')}</Button>
       </div>
-      {S.routines.length ? <div className="list">{S.routines.map((r, i) => <SwipeToDelete key={r.id} className="item"
+      <div className="list">{S.routines.map((r, i) => <SwipeToDelete key={r.id} className="item"
         deleteLabel={t('Delete routine')} onDelete={() => confirmDelete(r)} {...tappable(() => nav('/plan/r/' + r.id))}>
         <span className="lrow-i"><Icon name={glyphOf(r.emoji)} /></span>
         <div className="grow"><div className="tt">{r.name}</div><div className="ss">{exCount(r.ex.length)}</div></div>
@@ -121,10 +130,7 @@ export default function Plan() {
             style={{ width: 28, height: 24, borderRadius: 7, fontSize: 12 }}
             onClick={ev => { ev.stopPropagation(); moveRoutine(i, 1) }}><Icon name="chevronDown" /></button>
         </div>}
-        <Icon name="chevronRight" className="chev" /></SwipeToDelete>)}</div> : <>
-        <div className="empty"><div className="ico"><Icon name="clipboard" /></div>{t('No routines yet.')}<br />{t('Create one or load the starter plan.')}</div>
-        <Button icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
-      </>}
-    </div></div>
+        <Icon name="chevronRight" className="chev" /></SwipeToDelete>)}</div>
+    </div></div>}
   </>
 }

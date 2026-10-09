@@ -94,13 +94,24 @@ describe('Settings — week starts on', () => {
 describe('Plan — the week schedule follows the setting', () => {
   const mount = () => act(() => root.render(<Plan />))
 
+  // With no routine there is nothing to put on a day, so the page leads with creating one.
+  it('leads with creating a routine, not a week of Rest rows, until there is one', () => {
+    mount()
+    expect(dayRows()).toEqual([])
+    expect(host.textContent).toContain('No routines yet.')
+    expect(host.textContent).toContain('New routine')
+    expect(host.textContent).toContain('Load starter plan')
+  })
+
   it('runs Monday to Sunday by default', () => {
+    mocks.S.routines = [{ id: 'r1', name: 'Push', emoji: null, ex: [] }]
     mount()
     expect(dayRows().slice(0, 7)).toEqual(
       ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
   })
 
   it('runs Sunday to Saturday for a Sunday profile', () => {
+    mocks.S.routines = [{ id: 'r1', name: 'Push', emoji: null, ex: [] }]
     mocks.S.weekStart = 0
     mount()
     expect(dayRows().slice(0, 7)).toEqual(
