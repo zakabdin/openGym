@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
@@ -316,8 +316,13 @@ function useRoutineReorder(routineIdentity, exercises, onDrop) {
 }
 
 export default function RoutineEdit() {
-  const nav = useNavigate()
+  const navTo = useNavigate()
   const { id } = useParams()
+  // Opened from a client's page (?for=<clientId>): "back" and "delete" return there, not to Plan.
+  const [qs] = useSearchParams()
+  const forClient = qs.get('for')
+  const back = forClient ? '/team/c/' + encodeURIComponent(forClient) : '/plan'
+  const nav = to => navTo(to === '/plan' ? back : to)
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
   const toast = useUI(s => s.toast)

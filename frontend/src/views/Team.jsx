@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { api } from '../lib/api.js'
-import { fmtDate, fmtVol } from '../lib/format.js'
+import { fmtDate, fmtVol, uid } from '../lib/format.js'
 import { workoutVolume, setsDone } from '../lib/history.js'
 import { buildPlanBundle } from '../lib/plan-share.js'
 import { applyProgram, undoProgram } from '../lib/trainer.js'
 import { IN_TELEGRAM, telegramHaptic } from '../lib/telegram.js'
+import { DEFAULT_GLYPH } from '../lib/glyphs.js'
 import Icon from '../components/Icon.jsx'
 import '../team.css'
 import { Button, Section, Row, Check, Switch, TextField, TextArea } from '../components/ui.jsx'
@@ -167,6 +168,15 @@ export function TeamClient() {
   const [name, setName] = useState('')
   const load = useCallback(() => { api('/api/trainer/client?id=' + encodeURIComponent(id)).then(setD).catch(e => toast(e.message)) }, [id])
   useEffect(load, [load])
+  // Build a routine for this client: it is made in the trainer's own plan (that is where the editor
+  // works), the editor returns here, and it then shows in the list below, ready to tick and send.
+  const update = useStore(s2 => s2.update)
+  const nav = useNavigate()
+  const create = () => {
+    const r = { id: uid(), name: 'New routine', emoji: DEFAULT_GLYPH, ex: [] }
+    update(s => { s.routines.push(r) })
+    nav('/plan/r/' + r.id + '?for=' + encodeURIComponent(id))
+  }
   if (!d) return <><Header title="Client" back="/team" /><div className="muted small">Loading…</div></>
 
   const chosen = (S.routines || []).filter(r => pick[r.id])
@@ -193,10 +203,11 @@ export function TeamClient() {
       <div className="tm-stat"><b>{d.workouts[0] ? fmtDate(d.workouts[0].d) : '—'}</b><span>Last trained</span></div>
       <div className="tm-stat"><b>{lastBW ? lastBW.w : '—'}</b><span>{'Body ' + d.unit}</span></div>
     </div>
-    <Section title="Send a program" footer={(S.routines || []).length ? 'Pick routines from your own plan. Build them in the Plan tab first.' : 'You have no routines yet — build them in the Plan tab, then send them here.'}>
+    <Section title="Send a program" footer={(S.routines || []).length ? 'Tick the routines to send, or build a new one for this client.' : 'No routines yet — build one for this client, then send it.'}>
       {(S.routines || []).map(r => <Row key={r.id} title={<>{r.emoji && <span className="tm-emoji">{r.emoji}</span>}{r.name}</>} subtitle={(r.ex || []).length + ' exercises'} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
         <Check checked={!!pick[r.id]} onChange={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))} />
       </Row>)}
+      <div style={{ padding: '8px 12px' }}><Button size="sm" variant="tinted" icon="plus" onClick={create}>New routine for {d.client.name}</Button></div>
       {chosen.length > 0 && <div style={{ padding: 12 }}>
         <TextField value={name} placeholder="Program name (optional)" onChange={e => setName(e.target.value)} />
         <div style={{ height: 8 }} />
