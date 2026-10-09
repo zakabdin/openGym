@@ -137,7 +137,7 @@ const GIF_BASE = ENV.VITE_GIF_BASE || 'gif/'
 // device that already has the soft 180 px version would never ask again. A version in the query
 // is a different URL to both, so everyone fetches the sharp one once. Bump it when the files
 // change under their names. Only for the app's own copy — a CDN base is somebody else's files.
-const MEDIA_REV = '?v=2'
+const MEDIA_REV = '?v=3'
 export const imgSrc = ex => IMG_BASE + ex.img + (IMG_BASE === 'img/' ? MEDIA_REV : '')
 export const gifSrc = ex => GIF_BASE + ex.gif + (GIF_BASE === 'gif/' ? MEDIA_REV : '')
 
