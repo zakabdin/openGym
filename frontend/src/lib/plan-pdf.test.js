@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildPdf, layoutPlan } from './plan-pdf.js'
+import { buildPdf, layoutPlan, shade } from './plan-pdf.js'
 import { planPrintData } from './plan-share.js'
 
 // A canvas context that only records: layout is decided from measureText and what gets drawn.
@@ -13,7 +13,8 @@ const stubPages = () => {
       fillText: (s, x, y) => texts.push({ s: String(s), x, y }),
       fillRect() {}, strokeRect() {}, clearRect() {},
       save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, stroke() {},
-      drawImage: (img, x, y, w, h) => texts.push({ s: '[img ' + img.id + ']', x, y, w, h })
+      drawImage: (img, x, y, w, h) => texts.push({ s: '[img ' + img.id + ']', x, y, w, h }),
+      translate() {}, scale() {}, fill: () => texts.push({ s: '[fill ' + ctx.fillStyle + ']', x: 0, y: 0 })
     }
     pages.push(texts)
     return ctx
@@ -90,6 +91,46 @@ describe('layoutPlan with pictures', () => {
   it('does not need any pictures', () => {
     const { newPage } = stubPages()
     expect(layoutPlan(planPrintData(S(1), ''), newPage, new Map())).toBe(1)
+  })
+})
+
+describe('the muscle figure', () => {
+  globalThis.Path2D = globalThis.Path2D || class { constructor(d) { this.d = d } }
+  const geo = {
+    front: { vb: '0 95 727 1280', p: { chest: ['M0 0'], quadriceps: ['M1 1'], head: ['M2 2'] } },
+    back: { vb: '718 95 727 1280', p: { chest: ['M3 3'] } }
+  }
+  const fills = pages => pages.flat().filter(t => t.s.startsWith('[fill')).map(t => t.s)
+  it('draws the front and back of the body for each routine, with the muscles named', () => {
+    const { pages, newPage } = stubPages()
+    layoutPlan(planPrintData({ ...S(1), week: {} }, '', {}), newPage, new Map(), geo)
+    const text = all(pages).join('|')
+    expect(text).toMatch(/WHAT THIS SESSION HITS/)
+    expect(fills(pages).length).toBeGreaterThan(0)
+    // the chips under the figure name what the routine works
+    expect(planPrintData({ ...S(1), week: {} }, '').routines[0].hits.names.length).toBeGreaterThan(0)
+  })
+  it('is left out without the outline, and for a routine that works no muscle', () => {
+    const a = stubPages(); layoutPlan(planPrintData({ ...S(1), week: {} }, ''), a.newPage)
+    expect(all(a.pages).join('|')).not.toMatch(/WHAT THIS SESSION HITS/)
+    const b = stubPages()
+    const data = planPrintData({ ...S(1), week: {} }, '')
+    data.routines[0].hits = null
+    layoutPlan(data, b.newPage, new Map(), geo)
+    expect(all(b.pages).join('|')).not.toMatch(/WHAT THIS SESSION HITS/)
+  })
+  it('never splits across a page: a long plan keeps every figure on a page of its own rows', () => {
+    const { pages, newPage } = stubPages()
+    const n = layoutPlan(planPrintData({ ...S(8), week: {} }, ''), newPage, new Map(), geo)
+    expect(n).toBeGreaterThan(1)
+    for (const p of pages) for (const t of p) expect(t.y).toBeLessThanOrEqual(1754)
+  })
+  it('shades in the editor\'s five steps, from the paper grey up to the accent', () => {
+    expect(shade('#40c8e0', 0)).toBe('#d3d6df')
+    expect(shade('#40c8e0', 4)).toBe('#40c8e0')
+    const mids = [1, 2, 3].map(l => shade('#40c8e0', l))
+    expect(new Set(mids).size).toBe(3)
+    expect(shade('#40c8e0', 9)).toBe('#40c8e0')   // clamped
   })
 })
 

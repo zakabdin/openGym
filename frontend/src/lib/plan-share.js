@@ -12,11 +12,11 @@ import { EXIDX, isBodyweightEq } from './exercises.js'
 import { cleanUrl } from './media-refs.js'
 import { modeOf, exLine, MAX_PLANNED_WARMUPS } from './history.js'
 import { deriveSessionName } from './session-merge.js'
-import { uid, todayISO, DAYN, weekOrder, weekStartOf, exCount } from './format.js'
+import { uid, todayISO, DAYN, weekOrder, weekStartOf, exCount, ACCENTS } from './format.js'
 import { t, exerciseNameFor, exerciseNameClass, getLang, RTL_LANGS } from './i18n-core.js'
 import { convertWeight } from './units.js'
 import { fmtSpeed, speedUnitOf } from './speed.js'
-import { MUSCLES, inMuscleOrder } from './muscles.js'
+import { MUSCLES, inMuscleOrder, loadOfRoutine, rankOf, levelsOf, MUSCLE_NAME } from './muscles.js'
 
 const PLAN_FMT = 1
 const WEEK_DAYS = [1, 2, 3, 4, 5, 6, 0]   // every getDay() index; only the reader's own
@@ -398,8 +398,17 @@ export function planPrintData(S, owner, { routineId, link } = {}) {
       const names = [].concat(S.week?.[d] || []).map(id => S.routines.find(x => x.id === id)?.name).filter(Boolean)
       return { day: t(DAYN[d]), value: names.length ? deriveSessionName(names) : '' , rest: t('Rest') }
     }),
+    body: S.body === 'female' ? 'female' : 'male',
+    accent: ACCENTS[S.accent] || ACCENTS.teal,
+    hitsTitle: t('What this session hits'),
     routines: routines.map(r => ({
       name: r.name, count: exCount(r.ex.length), bare: !!single,
+      // Which muscles the routine works and how hard (the shading of the figure in the editor).
+      hits: (() => {
+        const load = loadOfRoutine(r)
+        const { worked } = rankOf(load)
+        return worked.length ? { levels: levelsOf(load), names: worked.slice(0, 6).map(m => t(MUSCLE_NAME[m])) } : null
+      })(),
       units: units(r.ex).map(u => ({ superset: u.length > 1, items: u.map(item) })),
       empty: t('No exercises yet.')
     })),

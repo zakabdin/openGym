@@ -5,20 +5,23 @@
 // share sheet, or downloads it where sharing files isn't available.
 import { planPrintData } from './plan-share.js'
 import { EXIDX, imgSrc } from './exercises.js'
+import { MUSCLES, INERT } from './muscles.js'
 
 const PX_W = 1240, PX_H = 1754            // A4 at 150 dpi
 const PT_W = 595.28, PT_H = 841.89        // A4 in PDF points
 const M = 96                               // page margin, px
 const PIC = 112, PIC_GAP = 22              // an exercise's picture, and the space after it, px
 const FONT = '-apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-const C = { ink: '#16181d', dim: '#6b7180', faint: '#a2a8b6', line: '#e4e6ec', soft: '#eef0f4', accent: '#6a7a3a', bar: '#cfe08a' }
+const C = { sil: '#e9ebf0', ink: '#16181d', dim: '#6b7180', faint: '#a2a8b6', line: '#e4e6ec', soft: '#eef0f4', accent: '#6a7a3a', bar: '#cfe08a' }
 
 /**
  * Draw `data` (planPrintData) onto pages. `newPage()` must return a fresh 2D context sized
  * PX_W × PX_H, white, and is called once per page; returns how many pages were drawn. `images` maps
  * an exercise id to a loaded image: those rows get a picture beside the name, the rest stay text.
+ * `geo` is the body outline ({ front, back }, each a viewBox and paths): with it every routine gets
+ * the muscle figure the editor shows, shaded by how hard each muscle is worked.
  */
-export function layoutPlan(data, newPage, images = new Map()) {
+export function layoutPlan(data, newPage, images = new Map(), geo = null) {
   let ctx = null, y = 0, pages = 0
   const left = M, right = PX_W - M, bottom = PX_H - M - 40
   const rtl = !!data.rtl
@@ -78,6 +81,7 @@ export function layoutPlan(data, newPage, images = new Map()) {
   if (!data.routines.length) put(data.none, startX, y + 28, { size: 28, color: C.faint })
 
   const indent = 28
+  const FIG_H = 400, FIG_GAP = 56   // the muscle figure's height, and the space between front and back
   data.routines.forEach(r => {
     // The routine's heading never sits alone at the foot of a page: it moves with its first row.
     const rowsOf = r.units.length ? r.units : [{ empty: true }]
@@ -93,8 +97,44 @@ export function layoutPlan(data, newPage, images = new Map()) {
       room(h)
       drawRow(u, r)
     })
+    if (geo && r.hits) drawHits(r.hits, r)
     y += 34
   })
+
+  // "What this session hits": the front and back of the body, each muscle shaded like the editor does
+  // (the app's own five steps, from the paper's grey up to the person's accent), and the muscles by name.
+  function hitsHeight(h) {
+    const lines = wrap(h.names.join('  ·  '), right - left - 2 * indent, 24, 400).length
+    return 16 + 40 + FIG_H + 22 + lines * 34 + 8
+  }
+  function drawFigure(view, x, yy, w, h, levels) {
+    const [vx, vy, vw, vh] = String(view.vb).trim().split(/\s+/).map(Number)
+    const k = Math.min(w / vw, h / vh)
+    ctx.save()
+    ctx.translate(x + (w - vw * k) / 2 - vx * k, yy + (h - vh * k) / 2 - vy * k)
+    ctx.scale(k, k)
+    ctx.fillStyle = C.sil
+    for (const slug of INERT) for (const d of view.p[slug] || []) ctx.fill(new Path2D(d))
+    for (const slug of MUSCLES) {
+      ctx.fillStyle = shade(data.accent, levels[slug] || 0)
+      for (const d of view.p[slug] || []) ctx.fill(new Path2D(d))
+    }
+    ctx.restore()
+  }
+  function drawHits(h, r) {
+    room(hitsHeight(h))
+    y += 16
+    // The routine is named, since the figure can land on the page after its exercises.
+    put((data.hitsTitle + (r.bare ? '' : ' · ' + r.name)).toUpperCase(), startX, y + 16, { size: 22, weight: 700, color: C.faint }); y += 40
+    const aspect = String(geo.front.vb).trim().split(/\s+/).map(Number)
+    const figW = Math.round(FIG_H * aspect[2] / aspect[3])
+    const x0 = Math.round((PX_W - (2 * figW + FIG_GAP)) / 2)
+    drawFigure(geo.front, x0, y, figW, FIG_H, h.levels)
+    drawFigure(geo.back, x0 + figW + FIG_GAP, y, figW, FIG_H, h.levels)
+    y += FIG_H + 22
+    for (const l of wrap(h.names.join('  ·  '), right - left - 2 * indent, 24, 400)) { put(l, startX + (rtl ? -indent : indent), y + 22, { size: 24, color: C.dim }); y += 34 }
+    y += 8
+  }
 
   // One exercise: where its text goes and how tall it is. A picture takes the start of the row and
   // pushes the text along; a row is never shorter than its picture.
@@ -156,6 +196,14 @@ export function layoutPlan(data, newPage, images = new Map()) {
     if (u.superset) { ctx.fillStyle = C.bar; ctx.fillRect(rtl ? right - indent + 6 : left + indent - 18, top + 6, 6, y - top - 12) }
   }
   return pages
+}
+
+// The editor's five steps (.bm-m.l0…l4): the muscle's resting grey, then 32 / 56 / 78 / 100 % of the accent.
+const STEP = [0, 0.32, 0.56, 0.78, 1]
+const rgb = hex => { const n = parseInt(String(hex).replace('#', ''), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255] }
+export function shade(accent, level) {
+  const a = rgb(accent), b = rgb('#d3d6df'), t = STEP[Math.max(0, Math.min(4, level | 0))]
+  return '#' + a.map((v, i) => Math.round(b[i] + (v - b[i]) * t).toString(16).padStart(2, '0')).join('')
 }
 
 const enc = s => new TextEncoder().encode(s)
@@ -225,6 +273,9 @@ export async function renderPlanPdf(S, owner, opts = {}) {
   try { const { useStore } = await import('../store/useStore.js'); const bot = (await useStore.getState().loadConfig())?.telegram_bot; if (bot) link = 't.me/' + bot } catch { /* no server */ }
   const data = planPrintData(S, owner, { link, ...printOpts })
   const images = pictures ? await loadImages(data) : new Map()
+  // The body outline is ~90 KB, so it is fetched only when a PDF with pictures is made.
+  let geo = null
+  if (pictures) { try { const g = (await import('./body-paths.js')).default; geo = g[data.body] || g.male } catch { /* a PDF without the figure */ } }
   const canvases = []
   layoutPlan(data, () => {
     const c = document.createElement('canvas')
@@ -233,7 +284,7 @@ export async function renderPlanPdf(S, owner, opts = {}) {
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, PX_W, PX_H)
     canvases.push(c)
     return ctx
-  }, images)
+  }, images, geo)
   const pages = []
   for (const c of canvases) {
     const jpeg = new Uint8Array(await (await canvasBlob(c, 'image/jpeg', 0.92)).arrayBuffer())
