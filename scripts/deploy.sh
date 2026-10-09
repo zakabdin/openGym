@@ -18,7 +18,7 @@ set -eu
 
 docker compose build
 
-if docker compose ps --status running --services | grep -qx api && docker rollout --help >/dev/null 2>&1; then
+if docker compose ps --status running --services | grep -qx api && docker info --format '{{range .ClientInfo.Plugins}}{{.Name}} {{end}}' 2>/dev/null | grep -qw rollout; then
   docker rollout api
 else
   echo "docker-rollout not available or api not running — falling back to up -d" >&2
