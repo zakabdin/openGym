@@ -136,6 +136,33 @@ output), `api`, `web` (multi-stage build of `frontend/` served by nginx, which a
 `web/nginx.conf.template` is rendered from env vars at container start (`NGINX_PORT`, `BACKEND`,
 `PORT`), so host/port remapping works against prebuilt images without a rebuild.
 
+### Production server (opengym.one)
+
+The maintainer's live instance: a VPS behind Cloudflare and nginx (Origin Certificate), Docker
+Compose from a checkout at `~/openGym` on the `telegram` branch, user `deploy`. Services are
+`db` (Postgres), `api`, `web` (+ one-shot `media`); `web` is bound to `127.0.0.1:8081` by an
+untracked `docker-compose.override.yml` on the server — leave that file alone. The server's `.env`
+holds the secrets (bot token, `DATABASE_URL`, admin login); never print or commit it.
+
+- **Run something on the server:** `./ssh-server.sh '<command>'` (repo root, gitignored; logs in as
+  `deploy`). Without arguments it opens a shell.
+- **Deploy** (only when the user asks): push to `telegram`, then
+  `./ssh-server.sh 'cd ~/openGym && git pull --ff-only origin telegram && ./scripts/deploy.sh'`.
+  The script builds first while the old containers serve, then `docker rollout api` starts a second
+  api container, waits for its healthcheck and removes the old one (zero downtime), then recreates
+  `web` (under a second). It needs the `docker-rollout` plugin, installed on the server at
+  `~/.docker/cli-plugins/docker-rollout` (pinned v0.14); without it the script falls back to a plain
+  `up -d` with a short gap. Schema changes must be backward compatible (old and new api overlap).
+- **Verify after a deploy:** `curl https://opengym.one/api/health` (`{"ok":true,"users":N}`) and
+  `./ssh-server.sh 'cd ~/openGym && docker compose ps'` — all services `healthy`.
+- The production database is shared, real data. Do not edit rows (for example attaching a user to a
+  trainer) or reset it without the user's explicit go-ahead.
+- Local testing without the live bot: run the API against the Postgres test container
+  (`TEST_DATABASE_URL=postgres://postgres:test@localhost:5433/opengym`, a throwaway `DB_SCHEMA`) with
+  `TELEGRAM_BOT_TOKEN=123456:TEST-token`, then sign users in with a stubbed `window.Telegram.WebApp`
+  whose `initData` is signed with that token. Clear stale cookies first: a session cookie beats a
+  Bearer token.
+
 ## Guidelines from CONTRIBUTING.md worth knowing before changing code
 
 - **Dependency-light is a hard constraint, not a preference.** Frontend: React + Router + Zustand
