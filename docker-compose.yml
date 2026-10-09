@@ -76,6 +76,14 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # The image checks every 5 minutes, which is too slow for scripts/deploy.sh to know when a new
+    # container is ready. Same probe, tighter timing.
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:$${PORT}/api/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     environment:
       # DATABASE_URL comes from .env (see .env.example); it must point at the `db` service above.
       # The port the API listens on. web proxies to this same value, so the two
@@ -106,7 +114,13 @@ services:
       media:
         condition: service_completed_successfully
       api:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:$${NGINX_PORT}/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
     ports:
       - "${WEB_PORT:-8080}:${NGINX_PORT:-80}"
     # nginx renders its config at start-up from these (web/nginx.conf.template),
