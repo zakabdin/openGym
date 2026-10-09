@@ -2907,6 +2907,27 @@ paths:
         '429': { description: too many this hour }
         '502': { description: Telegram refused the file }
 
+  /api/telegram/say:
+    post:
+      tags: [telegram]
+      operationId: telegramSay
+      summary: "A fixed confirmation into the signed-in person's own Telegram chat"
+      description: |
+        After the app logs today's workout for the bot's `/done` button it posts `{ key: "workoutLogged", name }`
+        here, and the server sends the translated "Logged ✅ <name>" to the person's chat. Only that key is
+        accepted, only to the signed-in profile's own chat, at most 30 an hour. 404 without a bot token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [key], properties: { key: { type: string, enum: [workoutLogged] }, name: { type: string } } }
+      responses:
+        '200': { description: Sent. }
+        '400': { description: unknown message, or no Telegram chat }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { description: too many this hour }
+        '502': { description: Telegram refused the message }
+
   /api/telegram/webhook:
     post:
       tags: [telegram]

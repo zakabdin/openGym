@@ -1,7 +1,13 @@
 // The persisted boundary for a finished session. Keep this pure so compatibility tests can
 // exercise the exact shape the UI writes without mounting React or mutating store state.
-import { bestWeightForEntry, cleanupSg } from './history.js'
-import { hasCompletedWork, isSideSet } from './workout-model.js'
+import { bestWeightForEntry, bestWeightFor, cleanupSg, workoutVolume } from './history.js'
+import { hasCompletedWork, isSideSet, isWarmupRow } from './workout-model.js'
+import { betterWeight, beatsWeight, EXIDX } from './exercises.js'
+import { is1RMRecord } from './onerm.js'
+import { exerciseMuscleSnapshot } from './muscles.js'
+import { markAllSetsDone } from './backfill.js'
+import { buildCombinedEntries, deriveSessionName } from './session-merge.js'
+import { uid, todayISO } from './format.js'
 
 // planSec is live-session bookkeeping: a hold displaced before it finished puts its plan aside so
 // the row still knows what it is asking for (Workout.startTimed). A finished session keeps only
@@ -89,4 +95,53 @@ export function buildCompletedWorkout(active, { end = Date.now(), prs = [], snap
     ...(allNoProg ? { excludeFromProgression: true } : {}),
     ...(sessionNote ? { note: sessionNote } : {}),
   }
+}
+
+/**
+ * What a session just finished is a record in: the exercises whose heaviest completed set beat the best
+ * so far, and those whose estimated 1RM did without a heavier top set (the same weight for more reps).
+ * `st` is the state BEFORE the session is filed. → { prs: [exerciseId], e1prs: [{ id, ... }] }
+ */
+export function recordsOf(st, entries) {
+  const prs = [], e1prs = []
+  for (const e of entries) {
+    const loads = e.sets.filter(s => s.done && !isWarmupRow(s)).map(s => s.w).filter(w => w > 0)
+    const mx = loads.length ? loads.reduce((a, b) => betterWeight(e.id, a, b)) : 0
+    if (beatsWeight(e.id, mx, bestWeightFor(st, e.id))) prs.push(e.id)
+    const rec = is1RMRecord(st, e.id, e)
+    if (rec && !prs.includes(e.id)) e1prs.push({ id: e.id, ...rec })
+  }
+  return { prs, e1prs }
+}
+
+/**
+ * Today's planned routines logged as done exactly as planned — every set ticked at the planned weight and
+ * reps, the way "mark all sets done" does for a past workout. `minutes` is how long it took; without it the
+ * time is an estimate from the number of sets. Pure: returns the finished workout, nothing is stored.
+ * → { w, prs, e1prs, minutes } | null when the routines hold nothing to log
+ */
+export function quickDone(S, routineIds, { minutes, now = Date.now() } = {}) {
+  const { entries, routineIds: rids, routines } = buildCombinedEntries(S, routineIds)
+  const done = markAllSetsDone(entries).filter(e => e.sets.some(s => s.done))
+  if (!done.length) return null
+  const workSets = done.reduce((n, e) => n + e.sets.filter(s => s.done && !isWarmupRow(s)).length, 0)
+  const given = Math.round(Number(minutes))
+  const mins = given >= 1 && given <= 600 ? given : Math.min(240, Math.max(10, Math.round(workSets * 2.5)))
+  const A = {
+    id: uid(), d: todayISO(), start: now - mins * 60000, routineIds: rids,
+    name: routines.length ? deriveSessionName(routines.map(r => r.name)) : '', bw: null, cur: 0, entries: done
+  }
+  const { prs, e1prs } = recordsOf(S, A.entries)
+  const w = buildCompletedWorkout(A, { end: now, prs, snapshotFor: e => (EXIDX[e.id]?.custom ? exerciseMuscleSnapshot(EXIDX[e.id]) : null) })
+  w.vol = workoutVolume(w)
+  return { w, prs, e1prs, minutes: mins }
+}
+
+/** File a finished session in the state `s` (call inside store.update): the heaviest weights move on too. */
+export function fileWorkout(s, w) {
+  w.entries.forEach(e => {
+    const mx = bestWeightForEntry(e)
+    if (mx > 0 && beatsWeight(e.id, mx, (s.exWeights[e.id] || {}).w || 0)) s.exWeights[e.id] = { w: mx, d: w.d }
+  })
+  s.workouts.push(w)
 }

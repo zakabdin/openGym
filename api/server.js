@@ -2062,6 +2062,23 @@ const routes = {
       json(res, 200, { ok: true });
     },
 
+    // A short, fixed message to the person's own chat after something done in the app on the bot's behalf
+    // (the workout the /done button logged). Only keys on this list, only the signed-in profile's chat.
+    'POST /api/telegram/say': async (req, res) => {
+      const user = await readSession(req);
+      if (!user) return json(res, 401, { error: 'not signed in' });
+      const body = await readBody(req);
+      if (body.key !== 'workoutLogged') return json(res, 400, { error: 'unknown message' });
+      if (!user.tg?.id) return json(res, 400, { error: 'this profile has no Telegram chat' });
+      const now = Date.now();
+      const recent = (pdfSends.get('say:' + user.id) || []).filter(t => now - t < 3600000);
+      if (recent.length >= 30) return json(res, 429, { error: 'too many messages this hour' });
+      pdfSends.set('say:' + user.id, [...recent, now]);
+      const S = await store.state.get(user.id).catch(() => null);
+      const ok = await sendTelegramMessage(TELEGRAM_BOT_TOKEN, user.tg.id, botText(pickLang(S, user.tg.lang), 'workoutLogged', text(body.name).slice(0, 80)));
+      json(res, ok ? 200 : 502, ok ? { ok: true } : { error: 'Telegram did not take the message' });
+    },
+
     'POST /api/auth/telegram': async (req, res) => {
       const body = await readBody(req);
       const tg = verifyInitData(text(body.initData), TELEGRAM_BOT_TOKEN);

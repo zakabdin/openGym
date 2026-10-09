@@ -189,3 +189,15 @@ test('sendTelegramDocument posts the file as multipart to the chat it was given'
   assert.equal(await sendTelegramDocument('T0KEN', 77, Buffer.from('x'), 'a.pdf', '', async () => { throw new Error('net'); }), false);
   assert.equal(await sendTelegramDocument('', 77, Buffer.from('x'), 'a.pdf'), false);
 });
+
+test('the "logged" confirmation: only that message, only to the signed-in Telegram profile\'s own chat, bounded', async t => {
+  const h = await startServer(t);
+  const r = await call(h)('POST', '/api/auth/telegram', { initData: initData(51, 'Say') });
+  const me = call(h, r.body.token);
+  assert.equal((await call(h)('POST', '/api/telegram/say', { key: 'workoutLogged' })).status, 401, 'no session');
+  assert.equal((await me('POST', '/api/telegram/say', { key: 'anything else' })).status, 400, 'only the one fixed message');
+  assert.equal((await me('POST', '/api/telegram/say', { key: 'workoutLogged', name: 'Push', chat_id: 1 })).status, 502, 'handed to Telegram, which refuses a made-up token');
+  let last;
+  for (let i = 0; i < 30; i++) last = await me('POST', '/api/telegram/say', { key: 'workoutLogged', name: 'Push' });
+  assert.equal(last.status, 429);
+});

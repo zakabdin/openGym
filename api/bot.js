@@ -9,7 +9,7 @@ import { LANG_CODES, LANG_NAMES, PACKS, matchLang, tr, telegramCode } from './bo
 import { ABORT } from './store.js';
 
 // The commands, in menu order. `trainer` ones are answered with a polite no for everyone else.
-export const COMMANDS = ['start', 'help', 'plan', 'today', 'last', 'progress', 'weight', 'clients', 'language', 'reminders', 'notifications'];
+export const COMMANDS = ['start', 'help', 'plan', 'today', 'done', 'last', 'progress', 'weight', 'clients', 'language', 'reminders', 'notifications'];
 
 /** The header Telegram echoes back on every webhook call; derived from the token, so no new secret to keep. */
 export const webhookSecret = token => crypto.createHmac('sha256', String(token)).update('opengym-webhook').digest('hex').slice(0, 48);
@@ -62,8 +62,12 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
   };
   // `pdf: 'plan' | 'today'` adds a PDF button: it opens the app on a screen that makes the PDF and
   // drops it into this chat (the PDF needs the exercise catalogue, so it is made in the app).
-  const send = (chatId, text, { button, pdf, lang = 'en' } = {}) => call('sendMessage', {
+  const send = (chatId, text, { button, pdf, done, lang = 'en' } = {}) => call('sendMessage', {
     chat_id: chatId, text: String(text).slice(0, 3900), disable_web_page_preview: true,
+    // `done`: the one button of /done — it opens the app on a screen that logs today's workout (minutes optional).
+    ...(done !== undefined && hasButton ? { reply_markup: { inline_keyboard: [[
+      { text: '✅ ' + tr(lang, 'doneButton'), web_app: { url: `${appUrl}/#/done${done ? '/' + done : ''}` } }
+    ]] } } : {}),
     ...(button && hasButton ? { reply_markup: { inline_keyboard: [[
       { text: tr(lang, 'openApp'), web_app: { url: appUrl } },
       ...(pdf ? [{ text: '📄 PDF', web_app: { url: `${appUrl}/#/pdf/${pdf}` } }] : [])
@@ -102,6 +106,17 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       if (!routines.length) return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${tr(lang, 'restDay')}`, button: true };
       const lines = routines.map(r => `• ${r.name} — ${tr(lang, 'exercisesN', list(r.ex).length)}`);
       return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${lines.join('\n')}${done ? '\n\n' + tr(lang, 'doneToday') : ''}`, button: true, pdf: 'today' };
+    },
+
+    // Logs nothing itself: the app does it on the button (it owns how a finished workout is filed — weights,
+    // records), so the bot only checks there is something to log and offers the button.
+    async done({ lang, S, arg }) {
+      const t = todayIn(S.reminder?.tz, now());
+      const routines = plannedFor(S, t.date, t.wd);
+      if (!routines.length) return { text: `${tr(lang, 'today')} · ${dayName(lang, t.wd)}\n${tr(lang, 'restDay')}`, button: true };
+      if (list(S.workouts).some(w => w.d === t.date)) return { text: tr(lang, 'alreadyDone'), button: true };
+      const mins = /^\d{1,3}$/.test(arg) ? Number(arg) : 0;
+      return { text: tr(lang, 'doneAsk', routines.map(r => r.name).join(' + ')), done: mins >= 1 && mins <= 600 ? mins : 0 };
     },
 
     async last({ lang, S }) {
@@ -223,7 +238,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
     if (!OPEN.has(name) && (!user || user.disabled || !S)) return void send(chatId, tr(lang, 'notLinked'), { button: true, lang });
     const out = await handlers[name]({ lang, user, S: S || {}, arg: (cmd[2] || '').trim().split(/\s+/)[0] || '', chatId });
     if (out?.lang) lang = out.lang;
-    await send(chatId, out.text, { button: out.button, pdf: out.pdf, lang });
+    await send(chatId, out.text, { button: out.button, pdf: out.pdf, done: out.done, lang });
   }
 
   /**

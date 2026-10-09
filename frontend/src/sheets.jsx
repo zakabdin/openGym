@@ -35,7 +35,7 @@ import { policyFor, defaultIncrement, POLICIES_FOR, POLICY_NAME, POLICY_DESC, MA
 import { normalizeRepRange } from './lib/rep-range.js'
 import { MOBILE, shareExport, printHtml } from './lib/mobile.js'
 import { speedUnitOf, toSpeed, fromSpeed } from './lib/speed.js'
-import { buildCompletedWorkout } from './lib/finish-workout.js'
+import { buildCompletedWorkout, recordsOf, fileWorkout } from './lib/finish-workout.js'
 import { isWarmupRow, hasCompletedWork } from './lib/workout-model.js'
 import { saveSessionAsRoutine } from './lib/session-routines.js'
 import { nextUnfinishedUnit } from './lib/supersetFlow.js'
@@ -2650,15 +2650,9 @@ function doFinishWorkout() {
   // saved one is (rebuildPrHistory, below): it gains a badge it leads with, and a later session
   // it outdoes loses its own. It used to report none at all while the editor's Save awarded them
   // (QA 1.3.9). The confirmed weights are left alone either way.
-  if (!past) A.entries.forEach(e => {
-    const loads = e.sets.filter(s => s.done && !isWarmupRow(s)).map(s => s.w).filter(w => w > 0)
-    const mx = loads.length ? loads.reduce((a, b) => betterWeight(e.id, a, b)) : 0
-    if (beatsWeight(e.id, mx, bestWeightFor(st, e.id))) prs.push(e.id)
-    // A heavier estimate without a heavier top set is its own kind of progress —
-    // same weight for more reps. Reported separately so it can't be read as a load PR.
-    const rec = is1RMRecord(st, e.id, e)
-    if (rec && !prs.includes(e.id)) e1prs.push({ id: e.id, ...rec })
-  })
+  // A heavier estimate without a heavier top set is its own kind of progress — same weight for more
+  // reps — reported separately so it can't be read as a load PR (recordsOf, lib/finish-workout.js).
+  if (!past) { const rec = recordsOf(st, A.entries); prs.push(...rec.prs); e1prs.push(...rec.e1prs) }
   const w = buildCompletedWorkout(A, {
     end: past ? backfillEnd(A) : Date.now(),
     prs,
@@ -2677,11 +2671,7 @@ function doFinishWorkout() {
       shown = s.workouts.find(x => x === w || (w.id != null && x.id === w.id)) || w
       prs.push(...[...(shown.prs || [])])
     } else {
-      w.entries.forEach(e => {
-        const mx = bestWeightForEntry(e)
-        if (mx > 0 && beatsWeight(e.id, mx, (s.exWeights[e.id] || {}).w || 0)) s.exWeights[e.id] = { w: mx, d: w.d }
-      })
-      s.workouts.push(w)
+      fileWorkout(s, w)
     }
     s.active = null
   })

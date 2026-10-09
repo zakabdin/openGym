@@ -235,3 +235,34 @@ test('setup registers the webhook with its secret, the menu and description in e
   assert.equal(await w.bot.setup({ webhookUrl: URL_ + '/api/telegram/webhook' }), false);   // unchanged: nothing sent
   assert.equal(w.calls.length, before);
 });
+
+test('/done offers a button that logs today in the app, with the minutes when given — and only when there is something to log', async () => {
+  const w = world({ users: [ana], states: { u1: S() } });
+  await w.say('/done');
+  assert.match(w.sent[0].text, /Log today's workout as done\?\nPull/);
+  assert.equal(w.sent[0].reply_markup.inline_keyboard[0][0].web_app.url, URL_ + '/#/done');
+  assert.match(w.sent[0].reply_markup.inline_keyboard[0][0].text, /^✅ Mark as done/);
+  await w.say('/done 45');
+  assert.equal(w.sent[1].reply_markup.inline_keyboard[0][0].web_app.url, URL_ + '/#/done/45');
+  await w.say('/done 99999');
+  assert.equal(w.sent[2].reply_markup.inline_keyboard[0][0].web_app.url, URL_ + '/#/done', 'a silly number is dropped');
+  await w.say('/done soon');
+  assert.equal(w.sent[3].reply_markup.inline_keyboard[0][0].web_app.url, URL_ + '/#/done');
+  // already logged today
+  w.states.u1 = S({ workouts: [{ d: '2026-10-07' }] });
+  await w.say('/done');
+  assert.match(w.sent[4].text, /already logged a workout today/);
+  assert.equal(w.sent[4].reply_markup.inline_keyboard[0].length, 1);
+  assert.doesNotMatch(w.sent[4].reply_markup.inline_keyboard[0][0].web_app.url, /done/);
+  // a rest day
+  w.states.u1 = S({ week: { 1: ['a'] } });
+  await w.say('/done');
+  assert.match(w.sent[5].text, /Rest day today/);
+  // nothing changed in the profile: the bot never logs anything itself
+  assert.deepEqual(w.states.u1.workouts, []);
+});
+
+test('/done is in the command menu, in every language', () => {
+  assert.ok(COMMANDS.includes('done'));
+  for (const [lang, pack] of Object.entries(PACKS)) assert.ok(pack.cmd_done && pack.doneAsk.includes('{0}') && pack.doneButton && pack.alreadyDone && pack.workoutLogged.includes('{0}'), lang);
+});

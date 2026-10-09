@@ -147,6 +147,12 @@ the app itself has no Azerbaijani pack yet). Telegram calls `POST /api/telegram/
 (skipped when unchanged, via `meta.bot_setup`). Replies use the language chosen in the app, else
 Telegram's; notifications to a person go through `tgNotify` (translated, honours `/notifications off`).
 
+`/done [minutes]` and the PDF buttons on `/plan` and `/today` work the same way: the bot only checks and offers a
+button (`web_app` → `#/done/<min>` or `#/pdf/<plan|today>`); the app does the work because it owns the exercise
+catalogue and how a finished workout is filed (`lib/finish-workout.js` `quickDone`/`fileWorkout`/`recordsOf`,
+shared with the normal finish path), then POSTs `/api/telegram/document` or `/api/telegram/say` to put the
+result in the person's own chat. The server never writes a workout itself.
+
 **Azerbaijani in the app is parked, not deployed.** The 1,708-string pack (`locales/az.js` + `az` in
 `i18n-core.js`) lives on branch `azerbaijani`; `telegram` has it reverted (`8082d2d`, `c6f1a42`) so a deploy
 doesn't ship it. To ship it later: on `telegram`, `git revert c6f1a42 8082d2d` (undo the reverts). The bot's
