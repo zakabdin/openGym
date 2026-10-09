@@ -2608,6 +2608,23 @@ const adminSite = createAdminSite({
       if (u.disabled) { presence.delete(u.id); await dropDeviceLinks(store, u.id); }
       return u;
     },
+    // Back to a brand-new profile, for the operator to see what a first open looks like: the training
+    // document is replaced by an empty one stamped `resetAt` (the app's own "Reset everything" mark,
+    // without a list of names, so a device that has not seen it keeps only what it made AFTER the
+    // stamp — frontend/src/lib/sync-merge.js — and so wipes itself on its next sync, not the other
+    // way round). The revision moves on so every device pulls it. The inbox, uploaded files and the
+    // day-reminder claim go too. The account, its sign-ins, trainer link and push devices stay.
+    async resetData(id) {
+      const u = await store.users.byId(id);
+      if (!u) return null;
+      await store.state.update(u.id, cur => ({
+        write: { resetAt: Math.max(Date.now(), (Number(cur?.resetAt) || 0) + 1), lang: 'en', langAuto: true, _rev: (Number(cur?._rev) || 0) + 1 }
+      }));
+      await store.assignments.update(u.id, () => ({ items: [] }));
+      await store.users.mutate(u.id, x => { delete x.lastReminder; });
+      try { MEDIA.removeUser(u.id); } catch (e) { console.error('media: could not clear uploads of', u.id, e.message); }
+      return u;
+    },
     async remove(id) {
       const u = await store.users.byId(id);
       if (!u) return null;

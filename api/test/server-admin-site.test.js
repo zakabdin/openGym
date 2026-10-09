@@ -14,11 +14,11 @@ const SECRET = crypto.randomBytes(32).toString('hex');
 const CREDS = { ADMIN_USERNAME: 'boss', ADMIN_PASSWORD: 'a long enough admin passphrase' };
 const NOW = new Date().toISOString();
 
-async function start(t, { env = CREDS, users = [], states = {} } = {}) {
+async function start(t, { env = CREDS, users = [], states = {}, assignments = {} } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-adminsite-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
   const db = await testDb('adm');
-  await db.seed({ users, states });
+  await db.seed({ users, states, assignments });
   const child = spawn(process.execPath, ['server.js'], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, ...db.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', ...env }
@@ -199,4 +199,49 @@ test('a workout start is logged once per workout, and shows on the user page and
   const wk = (await h.req('GET', '/admin/api/audit?cat=workout', { cookie })).json;
   assert.equal(wk.events.length, 3);
   assert.equal((await h.req('GET', '/admin/api/audit?cat=workout&uid=u2', { cookie })).json.events.length, 1);
+});
+
+test('reset data empties a profile for a fresh start, stamps it so devices follow, and keeps the account', async t => {
+  const h = await start(t, {
+    users: [user('u1', 'Ana', { tg: { id: 5 }, trainerId: 't1' }), user('t1', 'Coach', { role: 'trainer' })],
+    states: { u1: { _rev: 7, lang: 'de', langAuto: false, workouts: [{ d: '2026-10-01', id: 'w1', entries: [] }], routines: [{ id: 'r1', name: 'Push', ex: [] }], week: { 1: ['r1'] }, bodyweight: [{ d: '2026-10-01', w: 80 }] } }
+    ,
+    assignments: { u1: [{ id: 'a1', from: 't1', status: 'pending', bundle: { routines: [] }, created: Date.now() }] }
+  });
+  assert.equal((await h.db.assignments('u1')).length, 1);
+  const { cookie, csrf } = await h.login();
+  const body = { id: 'u1' };
+  assert.equal((await h.req('POST', '/admin/api/user/reset', { body })).status, 401, 'no session');
+  assert.equal((await h.req('POST', '/admin/api/user/reset', { body, cookie })).status, 403, 'no token');
+  assert.equal((await h.req('POST', '/admin/api/user/reset', { body: { id: 'nobody' }, cookie, csrf })).status, 404);
+  assert.equal((await h.db.state('u1')).workouts.length, 1, 'nothing happened yet');
+
+  const before = Date.now();
+  const r = await h.req('POST', '/admin/api/user/reset', { body, cookie, csrf });
+  assert.equal(r.status, 200, r.text);
+  const s = await h.db.state('u1');
+  assert.deepEqual(Object.keys(s).sort(), ['_rev', 'lang', 'langAuto', 'resetAt']);
+  assert.equal(s._rev, 8, 'the revision moves on, so every device pulls it');
+  assert.ok(s.resetAt >= before, 'stamped now');
+  assert.equal(s.resetIds, undefined, 'no id list: a device that missed the reset keeps only what it made after the stamp');
+  assert.equal(s.langAuto, true, 'the language is chosen afresh, as for a new profile');
+  const u = await h.db.user('u1');
+  assert.equal(u.name, 'Ana'); assert.equal(u.tg.id, 5); assert.equal(u.trainerId, 't1');   // the account stays
+  assert.deepEqual(await h.db.assignments('u1'), [], 'the inbox is empty');
+  await new Promise(r => setTimeout(r, 150));
+  assert.ok((await h.db.audit()).some(x => x.ev === 'admin.user.reset'));
+
+  // A second reset moves the stamp forward, never back.
+  const again = await h.req('POST', '/admin/api/user/reset', { body, cookie, csrf });
+  assert.equal(again.status, 200);
+  const s2 = await h.db.state('u1');
+  assert.ok(s2.resetAt > s.resetAt); assert.equal(s2._rev, 9);
+});
+
+test('reset data also works for a profile that never synced a document', async t => {
+  const h = await start(t, { users: [user('u2', 'Bo')] });
+  const { cookie, csrf } = await h.login();
+  assert.equal((await h.req('POST', '/admin/api/user/reset', { body: { id: 'u2' }, cookie, csrf })).status, 200);
+  const s = await h.db.state('u2');
+  assert.equal(s._rev, 1); assert.ok(s.resetAt > 0);
 });

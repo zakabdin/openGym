@@ -147,6 +147,15 @@ the app itself has no Azerbaijani pack yet). Telegram calls `POST /api/telegram/
 (skipped when unchanged, via `meta.bot_setup`). Replies use the language chosen in the app, else
 Telegram's; notifications to a person go through `tgNotify` (translated, honours `/notifications off`).
 
+**Azerbaijani in the app is parked, not deployed.** The 1,708-string pack (`locales/az.js` + `az` in
+`i18n-core.js`) lives on branch `azerbaijani`; `telegram` has it reverted (`8082d2d`, `c6f1a42`) so a deploy
+doesn't ship it. To ship it later: on `telegram`, `git revert c6f1a42 8082d2d` (undo the reverts). The bot's
+Azerbaijani texts (`bot-i18n.js`) are separate and already live.
+
+**Admin "Reset data…"** (user page of `/admin`) clears a profile for a fresh-start look: the training
+document becomes `{resetAt, lang, langAuto, _rev+1}`, the inbox and uploads go, the account stays. Devices
+follow because `resetAt` without `resetIds` makes a copy that missed it keep only what it made afterwards.
+
 ### Production server (opengym.one)
 
 The maintainer's live instance: a VPS behind Cloudflare and nginx (Origin Certificate), Docker

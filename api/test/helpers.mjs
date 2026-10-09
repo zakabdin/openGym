@@ -158,6 +158,7 @@ export async function testDb(prefix = 't') {
     async invites() { return store.invites.all(); },
     async deviceLinks() { return (await store.q('SELECT * FROM device_links')).rows; },
     async audit() { return (await store.q('SELECT * FROM audit ORDER BY id')).rows; },
+    async assignments(uid) { return store.assignments.get(uid); },
     async drop() {
       try { await store.q(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); } catch { /* already gone */ }
       try { await store.close(); } catch { /* closed */ }

@@ -2,7 +2,7 @@
  *
  * A small server-rendered site of its own — not part of the app — for whoever runs the instance:
  * who has signed up, who trains with whom, how much they use it, and the activity log, with
- * disable and delete. It signs in with ADMIN_USERNAME and ADMIN_PASSWORD from the environment
+ * disable, reset data and delete. It signs in with ADMIN_USERNAME and ADMIN_PASSWORD from the environment
  * and is absent (404) while either is unset, so an instance that never asked for it has no
  * second way in.
  *
@@ -164,6 +164,14 @@ export function createAdminSite({ store, secret, username, password, secure, rea
       audit(req, r.disabled ? 'admin.user.disable' : 'admin.user.enable', { user: who(), target: r });
       return send(res, 200, { ok: true, id: r.id, disabled: r.disabled });
     }
+    if (path === '/admin/api/user/reset' && post) {
+      const body = await readBody(req);
+      const id = wanted(body.id);
+      const r = id ? await actions.resetData(id) : null;
+      if (!r) return send(res, 404, { error: 'no such user' });
+      audit(req, 'admin.user.reset', { user: who(), target: r });
+      return send(res, 200, { ok: true, id: r.id });
+    }
     if (path === '/admin/api/user/delete' && post) {
       const body = await readBody(req);
       const id = wanted(body.id);
@@ -243,6 +251,10 @@ async function setDisabled(u, disabled, done) {
   if (disabled && !confirm('Disable ' + u.name + '? They are signed out and cannot sign in until you enable them again.')) return;
   try { await api('user/disable', { id: u.id, disabled }); done(); } catch (e) { alert(e.message); }
 }
+async function resetUser(u, done) {
+  if (!confirm('Reset ' + u.name + "'s data? All their workouts, routines, plan, body weight, settings and inbox are cleared and their devices start from scratch on the next sync. The account, sign-ins and trainer link stay.")) return;
+  try { await api('user/reset', { id: u.id }); alert('Done. Their app starts from scratch on its next sync.'); done(); } catch (e) { alert(e.message); }
+}
 async function removeUser(u, done) {
   if (!confirm('Delete ' + u.name + ' and ALL their workouts, photos and sign-ins? This cannot be undone.')) return;
   if (prompt('Type the name to confirm: ' + u.name) !== u.name) return;
@@ -309,6 +321,7 @@ const pages = {
             kv('Push devices', u.push), kv('Sync revision', u.rev), kv('Id', u.id)),
           el('p', { class: 'bar', style: 'margin-top:16px' },
             el('button', { class: 'btn', onclick: () => setDisabled(u, !u.disabled, load) }, u.disabled ? 'Enable account' : 'Disable account'),
+            el('button', { class: 'btn', onclick: () => resetUser(u, load) }, 'Reset data…'),
             el('button', { class: 'btn danger', onclick: () => removeUser(u, () => { location.href = '/admin/users'; }) }, 'Delete…'))),
         d.clients.length ? el('div', { class: 'card' }, el('h1', {}, 'Clients (' + d.clients.length + ')'),
           table(['Name', 'Workouts', 'Last workout', 'Last sync', 'Status'], d.clients.map(c => el('tr', {}, el('td', {}, userLink(c)), el('td', {}, c.workouts), el('td', {}, day(c.lastWorkout)), el('td', {}, ago(c.lastSync, d.now)), el('td', {}, status(c)))))) : null,
