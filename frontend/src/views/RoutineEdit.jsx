@@ -1,5 +1,8 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
+import { api } from '../lib/api.js'
+import { buildPlanBundle } from '../lib/plan-share.js'
+import { telegramHaptic } from '../lib/telegram.js'
 import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { exOr } from '../lib/exercises.js'
@@ -11,7 +14,7 @@ import { Thumb } from '../components/Media.jsx'
 import { glyphPicker, exercisePicker, exConfigSheet, confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { glyphOf } from '../lib/glyphs.js'
-import { Button, Row, SelectRow, Switch } from '../components/ui.jsx'
+import { Button, Row, SelectRow, Switch, TextArea } from '../components/ui.jsx'
 import SwipeToDelete from '../components/SwipeToDelete.jsx'
 import { copyRoutine, deleteRoutine, replaceSlotExercise } from '../lib/routines.js'
 import { planPrintHTML, printPlan } from '../lib/plan-share.js'
@@ -315,24 +318,58 @@ function useRoutineReorder(routineIdentity, exercises, onDrop) {
   return { listRef, drag, onClickCapture }
 }
 
-export default function RoutineEdit() {
+// The trainer's last step: pick the days (optional), add a note, send. Plain English, like Team.
+function SendPlan({ routine, clientId, S, done }) {
+  const toast = useUI(s => s.toast)
+  const [name, setName] = useState('')
+  const [note, setNote] = useState('')
+  const [days, setDays] = useState([])
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api('/api/trainer/client?id=' + encodeURIComponent(clientId)).then(d => setName(d.client.name)).catch(() => {}) }, [clientId])
+  const ORDER = [1, 2, 3, 4, 5, 6, 0], LABEL = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+  const send = async () => {
+    setBusy(true)
+    try {
+      const week = {}
+      days.forEach(d => { week[d] = [routine.id] })
+      const bundle = buildPlanBundle({ ...S, routines: [routine], week }, routine.name)
+      await api('/api/trainer/assign', { method: 'POST', body: JSON.stringify({ clientId, note, bundle }) })
+      toast('Plan sent' + (name ? ' to ' + name : '')); telegramHaptic('success'); done()
+    } catch (e) { toast(e.message); setBusy(false) }
+  }
+  return <div className="card" style={{ margin: '16px 0' }}>
+    <div style={{ fontWeight: 600, marginBottom: 8 }}>Send this plan{name ? ' to ' + name : ''}</div>
+    <div className="muted small" style={{ marginBottom: 6 }}>Days (optional)</div>
+    <div className="row" style={{ gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+      {ORDER.map(d => <Button key={d} size="sm" variant={days.includes(d) ? 'primary' : undefined} onClick={() => setDays(x => x.includes(d) ? x.filter(y => y !== d) : [...x, d])}>{LABEL[d]}</Button>)}
+    </div>
+    <TextArea value={note} placeholder="Note (optional)" maxLength={500} onChange={e => setNote(e.target.value)} />
+    <div style={{ height: 10 }} />
+    <Button variant="primary" disabled={busy || !routine.ex.length} onClick={send}>{routine.ex.length ? 'Send' + (name ? ' to ' + name : '') : 'Add an exercise first'}</Button>
+  </div>
+}
+
+// A trainer's saved plans live in their own list (S.trainerPlans), apart from the routines they
+// train with. `tpl` points this editor at that list; with ?for=<clientId> it also offers to send.
+export default function RoutineEdit({ tpl = false }) {
   const navTo = useNavigate()
   const { id } = useParams()
+  const LIST = tpl ? 'trainerPlans' : 'routines'
   // Opened from a client's page (?for=<clientId>): "back" and "delete" return there, not to Plan.
   const [qs] = useSearchParams()
   const forClient = qs.get('for')
-  const back = forClient ? '/team/c/' + encodeURIComponent(forClient) : '/plan'
+  const back = forClient ? '/team/c/' + encodeURIComponent(forClient) : tpl ? '/team' : '/plan'
   const nav = to => navTo(to === '/plan' ? back : to)
   const S = useStore(s => s.S)
   const update = useStore(s => s.update)
   const toast = useUI(s => s.toast)
-  const r = S.routines.find(x => x.id === id)
+  const r = (S[LIST] || []).find(x => x.id === id)
   useEffect(() => { if (!r) nav('/plan') }, [!!r])
   // Editing here has no explicit "save" — every field change persists immediately. A single
   // auto-backup on the way out (not per keystroke) covers the whole editing session, deletion
   // included: this still unmounts after the delete button navigates away.
   useEffect(() => () => useStore.getState().autoBackupNow(), [])
-  const edit = fn => update(s => { fn(s.routines.find(x => x.id === id).ex) })
+  const edit = fn => update(s => { fn(s[LIST].find(x => x.id === id).ex) })
   const reorder = useRoutineReorder(r, r?.ex || [], (sourceIndex, targetSlot) => {
     edit(exercises => { reorderRoutineUnit(exercises, sourceIndex, targetSlot) })
   })
@@ -364,7 +401,7 @@ export default function RoutineEdit() {
       // The slot and the history as they are now, not as this render saw them: a sync can land
       // while the picker is open, and the new exercise's weight comes from its own sessions.
       const live = useStore.getState().S
-      const slot = live.routines.find(x => x.id === id)?.ex[i]
+      const slot = (live[LIST] || []).find(x => x.id === id)?.ex[i]
       if (!slot || slot.id !== openedOn) { picker.close(); return }
       // "+" on the exercise that is already in the slot: nothing to replace, and no toast that
       // says something was.
@@ -381,8 +418,8 @@ export default function RoutineEdit() {
     const owner = useStore.getState().user?.name || ''
     // Android's print manager refuses a job without a name. The editor never leaves a name blank,
     // but a routine that arrived from an import or another client may have none.
-    if (MOBILE) printHtml(planPrintHTML(S, owner, { routineId: id }), r.name || t('Routine')).catch(() => { /* dismissed */ })
-    else printPlan(S, owner, { routineId: id })
+    if (MOBILE) printHtml(planPrintHTML(tpl ? { ...S, routines: S.trainerPlans } : S, owner, { routineId: id }), r.name || t('Routine')).catch(() => { /* dismissed */ })
+    else printPlan(tpl ? { ...S, routines: S.trainerPlans } : S, owner, { routineId: id })
   }
   const toggleLink = i => edit(ex => {
     if (i < 1) return
@@ -404,14 +441,14 @@ export default function RoutineEdit() {
       <button className="iconbtn" onClick={() => nav('/plan')} aria-label={t('Plan')}><Icon name="chevronLeft" /></button>
       <div style={{ flex: 1, margin: '0 12px' }}>
         <input className="input" defaultValue={r.name} style={{ fontWeight: 600, fontSize: 20, letterSpacing: '-.021em' }}
-          onChange={e => update(s => { s.routines.find(x => x.id === id).name = e.target.value.trim() || t('Routine') })} />
+          onChange={e => update(s => { s[LIST].find(x => x.id === id).name = e.target.value.trim() || t('Routine') })} />
       </div>
-      <button className="iconbtn" aria-label={t('Pick an icon')} onClick={() => glyphPicker(r.emoji, g => update(s => { s.routines.find(x => x.id === id).emoji = g }))}><Icon name={glyphOf(r.emoji)} /></button>
+      <button className="iconbtn" aria-label={t('Pick an icon')} onClick={() => glyphPicker(r.emoji, g => update(s => { s[LIST].find(x => x.id === id).emoji = g }))}><Icon name={glyphOf(r.emoji)} /></button>
     </div>
 
     <div className="sect-b" style={{ marginBottom: 16 }}>
       <SelectRow icon="chartLine" title={t('Progression')} sheetTitle={t('Progression')}
-        value={r.prog || 'linear'} onChange={v => update(s => { s.routines.find(x => x.id === id).prog = v })}
+        value={r.prog || 'linear'} onChange={v => update(s => { s[LIST].find(x => x.id === id).prog = v })}
         options={POLICIES_FOR.reps.map(p => ({ value: p, label: t(POLICY_NAME[p]), subtitle: t(POLICY_DESC[p]) }))} />
       {/* Two controls that read alike and are not (issue #294). Progression picks how this
           routine's own targets move, and "No automatic progression" keeps them where they are.
@@ -421,7 +458,7 @@ export default function RoutineEdit() {
       <Row icon="pause" iconTint="var(--orange)" title={t('Deload routine')}
         subtitle={t('Its workouts do not count toward progression. They still show in history and statistics.')}>
         <Switch checked={r.excludeFromProgression === true} onChange={v => update(s => {
-          const routine = s.routines.find(x => x.id === id)
+          const routine = s[LIST].find(x => x.id === id)
           if (v) routine.excludeFromProgression = true
           else delete routine.excludeFromProgression
         })} />
@@ -500,11 +537,12 @@ export default function RoutineEdit() {
         exConfigSheet(ex, null, cfg => edit(x => { x.push({ id: ex.id, ...cfg }) }), null, r)
       }
     })} icon="plus">{t('Add exercise')}</Button>
+    {tpl && forClient && <SendPlan routine={r} clientId={forClient} S={S} done={() => navTo(back)} />}
     <div style={{ height: 10 }} />
     <Button onClick={() => {
       const copy = copyRoutine(r, t('Copy'))
-      update(s => { s.routines.push(copy) })
-      nav('/plan/r/' + copy.id)
+      update(s => { s[LIST].push(copy) })
+      nav((tpl ? '/team/plan/' : '/plan/r/') + copy.id + (forClient ? '?for=' + encodeURIComponent(forClient) : ''))
     }}>{t('Copy routine')}</Button>
     <div style={{ height: 10 }} />
     <Button disabled={!r.ex.length} onClick={printRoutine}>{t('Print / Save as PDF')}</Button>
@@ -512,7 +550,7 @@ export default function RoutineEdit() {
     <Button variant="danger" onClick={() => confirmSheet({
       title: t('Delete routine?'), message: t('“{0}” and its exercises will be removed.', r.name), confirmText: t('Delete'), danger: true,
       onConfirm: () => {
-        update(s => { deleteRoutine(s, id) })
+        update(s => { if (tpl) s.trainerPlans = s.trainerPlans.filter(x => x.id !== id); else deleteRoutine(s, id) })
         nav('/plan')
       }
     })}>{t('Delete routine')}</Button>

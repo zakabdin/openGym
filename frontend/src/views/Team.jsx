@@ -5,13 +5,14 @@ import { useUI } from '../store/useUI.js'
 import { api } from '../lib/api.js'
 import { fmtDate, fmtVol, uid } from '../lib/format.js'
 import { workoutVolume, setsDone } from '../lib/history.js'
-import { buildPlanBundle } from '../lib/plan-share.js'
-import { applyProgram, undoProgram } from '../lib/trainer.js'
-import { IN_TELEGRAM, telegramHaptic } from '../lib/telegram.js'
+import { undoProgram } from '../lib/trainer.js'
+import { copyRoutine } from '../lib/routines.js'
+import { usePendingPlans, openPlanPreview, planTitle } from '../components/PlanInbox.jsx'
+import { IN_TELEGRAM } from '../lib/telegram.js'
 import { DEFAULT_GLYPH } from '../lib/glyphs.js'
 import Icon from '../components/Icon.jsx'
 import '../team.css'
-import { Button, Section, Row, Check, TextField, TextArea } from '../components/ui.jsx'
+import { Button, Section, Row, TextField } from '../components/ui.jsx'
 
 // Trainers and their clients. Like the admin dashboard this screen is English-only: it is not
 // part of the translated end-user surface, so it stays out of the per-language string packs.
@@ -34,20 +35,32 @@ function Header({ title, sub, back }) {
   </div>
 }
 
-// The signed-in profile's side: its trainer, the plans waiting in the inbox, and the ones it took.
+// Re-run `load` when the app comes back to the front and every 20 s while it is open, so a client
+// who just joined, or a plan just answered, shows up without a reload.
+function useRefresh(load) {
+  useEffect(() => {
+    const on = () => { if (document.visibilityState === 'visible') load() }
+    document.addEventListener('visibilitychange', on)
+    const tm = setInterval(on, 20000)
+    return () => { document.removeEventListener('visibilitychange', on); clearInterval(tm) }
+  }, [load])
+}
+
+// The signed-in profile's side: its trainer, the plans waiting, and the ones it started.
 function MyTrainer() {
-  const S = useStore(s => s.S)
   const update = useStore(s => s.update)
+  const plans = useStore(s => s.S.programs)
   const user = useStore(s => s.user)
   const setUser = useStore(s => s.setUser)
   const toast = useUI(s => s.toast)
   const [mine, setMine] = useState(undefined)
-  const [items, setItems] = useState([])
   const [code, setCode] = useState('')
+  const [codeOpen, setCodeOpen] = useState(false)
+  const [pending, reloadPending] = usePendingPlans()
   const load = useCallback(() => {
     api('/api/trainer/mine').then(r => setMine(r.trainer)).catch(() => setMine(null))
-    api('/api/inbox').then(r => setItems(r.items || [])).catch(() => {})
-  }, [])
+    reloadPending()
+  }, [reloadPending])
   useEffect(load, [load])
 
   const join = async () => {
@@ -58,52 +71,30 @@ function MyTrainer() {
     try { const r = await api('/api/trainer/leave', { method: 'POST', body: '{}' }); setUser(r.user); setMine(null); toast('You left your trainer') }
     catch (e) { toast(e.message) }
   }
-  const answer = async (item, status) => {
-    try {
-      if (status === 'accepted') {
-        let res
-        // The program lands in the profile first; only if that worked is the trainer told.
-        update(s => { res = applyProgram(s, item, { schedule: true }) })
-        toast('Plan added to your week · undo anytime in Your plans' + (res.dropped ? ' · ' + res.dropped + ' unknown exercises skipped' : ''))
-        telegramHaptic('success')
-      }
-      await api('/api/inbox/resolve', { method: 'POST', body: JSON.stringify({ id: item.id, status }) })
-      load()
-    } catch (e) { toast(e.message) }
-  }
   const undo = id => { update(s => { undoProgram(s, id) }); toast('Plan removed') }
 
-  const pending = items.filter(i => i.status === 'pending')
   return <>
-    {(mine || user?.role !== 'trainer') && <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts, body weight and routines, and can send you plans. Nothing changes until you start one.' : 'Got a code or a link from your trainer? Opening their link joins you automatically.'}>
-      {mine ? <>
-        <div className="tm-client"><span className="tm-ava">{initial(mine.name)}</span><div><div className="nm">{mine.name}</div><div className="sb">Your trainer</div></div></div>
-        <Row icon="reset" title="Leave this trainer" onClick={leave} danger />
-      </> : mine === null ? <div style={{ padding: 12 }}>
-        <TextField value={code} placeholder="Trainer code" autoCapitalize="none" onChange={e => setCode(e.target.value)} />
-        <div style={{ height: 8 }} /><Button variant="primary" onClick={join} disabled={code.trim().length < 6}>Join</Button>
-      </div> : null}
-    </Section>}
-
     {pending.length > 0 && <Section title="New plans">
-      {pending.map(i => <div key={i.id} style={{ padding: 12 }}>
-        <div style={{ fontWeight: 600 }}>{i.bundle?.name || i.bundle?.routines?.[0]?.name || 'New plan'} <span className="dim small">from {i.fromName}</span></div>
-        <div className="dim small">{i.bundle?.routines?.length || 0} {i.bundle?.routines?.length === 1 ? 'workout' : 'workouts'} · {rel(i.created)}</div>
-        {i.note && <div style={{ margin: '6px 0' }}>{i.note}</div>}
-        <div className="row" style={{ gap: 8 }}>
-          <Button variant="primary" onClick={() => answer(i, 'accepted')}>Start this plan</Button>
-          <Button onClick={() => answer(i, 'declined')}>Not now</Button>
-        </div>
-      </div>)}
+      {pending.map(i => <Row key={i.id} icon="calendar" title={planTitle(i)} subtitle={'from ' + i.fromName + ' · ' + rel(i.created)} accessory="chevron" onClick={() => openPlanPreview(i, load)} />)}
     </Section>}
 
-    {(S.programs || []).length > 0 && <Section title="Your plans" footer="Undo removes the workouts it added, and puts your previous week back if it replaced it.">
-      {S.programs.map(p => <Row key={p.id} icon="calendar" title={p.name || 'Plan'} subtitle={'from ' + (p.from || 'your trainer') + ' · ' + p.routineIds.length + ' ' + (p.routineIds.length === 1 ? 'workout' : 'workouts')}>
+    {(plans || []).length > 0 && <Section title="Your plans" footer="Undo removes the workouts it added, and puts your previous week back if it replaced it.">
+      {plans.map(p => <Row key={p.id} icon="calendar" title={p.name || 'Plan'} subtitle={'from ' + (p.from || 'your trainer') + ' · ' + p.routineIds.length + ' ' + (p.routineIds.length === 1 ? 'workout' : 'workouts')}>
         <Button size="sm" onClick={() => undo(p.id)}>Undo</Button>
       </Row>)}
     </Section>}
 
-    {user?.role !== 'trainer' && <Section title="Train others" footer="Become a trainer to get an invite link, see your clients' training and send them plans.">
+    {(mine || user?.role !== 'trainer') && <Section title="Your trainer" footer={mine ? 'Your trainer can see your workouts and body weight, and can send you plans. Nothing changes until you start one.' : undefined}>
+      {mine ? <>
+        <div className="tm-client"><span className="tm-ava">{initial(mine.name)}</span><div><div className="nm">{mine.name}</div><div className="sb">Your trainer</div></div></div>
+        <Row icon="reset" title="Leave this trainer" onClick={leave} danger />
+      </> : mine === null ? (codeOpen ? <div style={{ padding: 12 }}>
+        <TextField value={code} placeholder="Trainer code" autoCapitalize="none" onChange={e => setCode(e.target.value)} />
+        <div style={{ height: 8 }} /><Button variant="primary" onClick={join} disabled={code.trim().length < 6}>Join</Button>
+      </div> : <Row icon="plus" title="Have a code or link from a trainer?" subtitle="Opening their link joins you automatically" accessory="chevron" onClick={() => setCodeOpen(true)} />) : null}
+    </Section>}
+
+    {user?.role !== 'trainer' && <Section title="Train others" footer="Become a trainer to invite clients and send them plans.">
       <Row icon="plus" title="Become a trainer" onClick={async () => {
         try { await api('/api/trainer/enable', { method: 'POST', body: '{}' }); setUser({ ...user, role: 'trainer' }) } catch (e) { toast(e.message) }
       }} accessory="chevron" />
@@ -111,17 +102,18 @@ function MyTrainer() {
   </>
 }
 
+const chip = c => c.pending > 0 ? ['Plan waiting', 'var(--orange)'] : c.accepted > 0 ? ['Active', 'var(--green)'] : ['No plan yet', 'var(--text-3, #888)']
+
 function Clients() {
   const nav = useNavigate()
   const toast = useUI(s => s.toast)
   const [list, setList] = useState(null)
   const [inv, setInv] = useState(null)
-  useEffect(() => {
-    api('/api/trainer/clients').then(r => setList(r.clients)).catch(e => toast(e.message))
-    api('/api/trainer/invite').then(setInv).catch(() => {})
-  }, [])
+  const load = useCallback(() => { api('/api/trainer/clients').then(r => setList(r.clients)).catch(e => toast(e.message)) }, [])
+  useEffect(() => { load(); api('/api/trainer/invite').then(setInv).catch(() => {}) }, [load])
+  useRefresh(load)
   const link = inv?.link || inv?.code
-  const copy = () => { navigator.clipboard?.writeText(link).catch(() => {}); toast('Copied') }
+  const copy = () => { navigator.clipboard?.writeText(link).catch(() => {}); toast('Link copied') }
   const share = () => {
     const url = 'https://t.me/share/url?url=' + encodeURIComponent(inv.link) + '&text=' + encodeURIComponent('Train with me on openGym')
     if (IN_TELEGRAM && window.Telegram?.WebApp?.openTelegramLink) window.Telegram.WebApp.openTelegramLink(url)
@@ -129,28 +121,25 @@ function Clients() {
   }
   const reset = async () => { try { setInv(await api('/api/trainer/invite/reset', { method: 'POST', body: '{}' })); toast('New link — the old one stopped working') } catch (e) { toast(e.message) } }
   return <>
-    <Section title="Your clients">
+    <div style={{ margin: '4px 0 14px' }}>
+      {inv?.link ? <Button variant="primary" icon="plus" onClick={share}>Invite a client</Button> : inv ? <Button variant="primary" icon="plus" onClick={copy}>Copy invite code</Button> : null}
+      {inv && <div className="row" style={{ justifyContent: 'center', gap: 4, marginTop: 6 }}>
+        <Button size="sm" variant="ghost" onClick={copy}>Copy link</Button>
+        <Button size="sm" variant="ghost" onClick={reset}>New link</Button>
+      </div>}
+    </div>
+    <Section title="Your clients" footer={list?.length ? undefined : 'Send your invite link. When they open it they appear here.'}>
       {list === null ? <div className="muted small" style={{ padding: 12 }}>Loading…</div>
-        : !list.length ? <div className="tm-empty">No clients yet. Send them your invite link below.</div>
-        : list.map(c => <button key={c.id} className="tm-client" onClick={() => nav('/team/c/' + c.id)}>
+        : !list.length ? <div className="tm-empty">No clients yet.</div>
+        : list.map(c => { const [label, color] = chip(c); return <button key={c.id} className="tm-client" onClick={() => nav('/team/c/' + c.id)}>
           <span className="tm-ava">{initial(c.name)}</span>
           <span style={{ minWidth: 0 }}>
             <div className="nm">{c.name}</div>
-            <div className="sb">{c.workouts + ' workouts' + (c.lastWorkout ? ' · last ' + fmtDate(c.lastWorkout) : '')}</div>
+            <div className="sb">{c.lastWorkout ? 'last trained ' + fmtDate(c.lastWorkout) : c.workouts + ' workouts'}</div>
           </span>
-          {c.pending > 0 && <span className="tm-badge">{c.pending} sent</span>}
+          <span className="tm-badge" style={{ color, background: 'color-mix(in srgb,' + color + ' 16%,transparent)' }}>{label}</span>
           <Icon name="chevronRight" className="lrow-c" />
-        </button>)}
-    </Section>
-    <Section title="Invite a client" footer="Anyone who opens this link joins you. A new link stops the old one from working; people already with you stay.">
-      {inv ? <div className="tm-invite">
-        <div className="tm-link">{link}</div>
-        {inv.link && <Button variant="primary" icon="plus" onClick={share}>Share in Telegram</Button>}
-        <div className="tm-actions">
-          <Button size="sm" onClick={copy}>Copy</Button>
-          <Button size="sm" onClick={reset}>New link</Button>
-        </div>
-      </div> : <div className="tm-empty">Loading…</div>}
+        </button> })}
     </Section>
   </>
 }
@@ -158,33 +147,30 @@ function Clients() {
 export function TeamClient() {
   const { id } = useParams()
   const S = useStore(s => s.S)
+  const update = useStore(s => s.update)
   const toast = useUI(s => s.toast)
+  const nav = useNavigate()
   const [d, setD] = useState(null)
-  const [pick, setPick] = useState({})
-  const [note, setNote] = useState('')
   const load = useCallback(() => { api('/api/trainer/client?id=' + encodeURIComponent(id)).then(setD).catch(e => toast(e.message)) }, [id])
   useEffect(load, [load])
-  // Build a routine for this client: it is made in the trainer's own plan (that is where the editor
-  // works), the editor returns here, and it then shows in the list below, ready to tick and send.
-  const update = useStore(s2 => s2.update)
-  const nav = useNavigate()
-  const create = () => {
-    const r = { id: uid(), name: 'New routine', emoji: DEFAULT_GLYPH, ex: [] }
-    update(s => { s.routines.push(r) })
-    nav('/plan/r/' + r.id + '?for=' + encodeURIComponent(id))
+  useRefresh(load)
+  const open = pid => nav('/team/plan/' + pid + '?for=' + encodeURIComponent(id))
+  // A new plan is a saved plan of the trainer's own, kept apart from the routines they train with.
+  const make = () => {
+    const r = { id: uid(), name: 'New plan', emoji: DEFAULT_GLYPH, ex: [] }
+    update(s => { s.trainerPlans = [...(s.trainerPlans || []), r] })
+    open(r.id)
+  }
+  // Starting from a saved plan works on a copy, so the saved one stays as it was.
+  const reuse = r => {
+    const copy = copyRoutine(r, r.name)
+    copy.name = r.name
+    update(s => { s.trainerPlans = [...(s.trainerPlans || []), copy] })
+    open(copy.id)
   }
   if (!d) return <><Header title="Client" back="/team" /><div className="muted small">Loading…</div></>
 
-  const chosen = (S.routines || []).filter(r => pick[r.id])
-  const send = async () => {
-    try {
-      // The trainer's own routines, as their app would export them: just the chosen ones, and
-      // only the weekdays that point at them.
-      const sub = { ...S, routines: chosen, week: Object.fromEntries(Object.entries(S.week || {}).map(([k, v]) => [k, [].concat(v).filter(x => chosen.some(r => r.id === x))]).filter(([, v]) => v.length)) }
-      await api('/api/trainer/assign', { method: 'POST', body: JSON.stringify({ clientId: id, note, bundle: buildPlanBundle(sub, chosen.length === 1 ? chosen[0].name : '') }) })
-      toast('Plan sent to ' + d.client.name); telegramHaptic('success'); setPick({}); setNote(''); load()
-    } catch (e) { toast(e.message) }
-  }
+  const saved = S.trainerPlans || []
   const lastBW = d.bodyweight[d.bodyweight.length - 1]
   return <>
     <Header title="Client" back="/team" />
@@ -193,28 +179,18 @@ export function TeamClient() {
       <div><div style={{ fontFamily: 'var(--display)', fontWeight: 800, fontSize: 24, letterSpacing: '-.03em' }}>{d.client.name}</div>
         <div className="muted small">{d.lastSync ? 'active ' + rel(d.lastSync) : 'joined ' + (d.client.joined ? fmtDate(d.client.joined.slice(0, 10)) : '')}</div></div>
     </div>
+    <div style={{ margin: '4px 0 14px' }}><Button variant="primary" icon="plus" onClick={make}>Make a plan for {d.client.name}</Button></div>
+    {d.assignments.length > 0 && <Section title="Plans sent">
+      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Plan'} subtitle={a.routines + (a.routines === 1 ? ' workout' : ' workouts') + ' · ' + rel(a.created)} value={a.status === 'accepted' ? 'started' : a.status === 'declined' ? 'not now' : 'waiting'} />)}
+    </Section>}
+    {saved.length > 0 && <Section title="Start from a saved plan" footer="Opens a copy, so your saved plan stays as it was.">
+      {saved.map(r => <Row key={r.id} title={r.name} subtitle={(r.ex || []).length + ((r.ex || []).length === 1 ? ' exercise' : ' exercises')} accessory="chevron" onClick={() => reuse(r)} />)}
+    </Section>}
     <div className="tm-stats">
       <div className="tm-stat"><b>{d.workouts.length}</b><span>Workouts</span></div>
       <div className="tm-stat"><b>{d.workouts[0] ? fmtDate(d.workouts[0].d) : '—'}</b><span>Last trained</span></div>
       <div className="tm-stat"><b>{lastBW ? lastBW.w : '—'}</b><span>{'Body ' + d.unit}</span></div>
     </div>
-    <Section title="Send a plan" footer={(S.routines || []).length ? 'Tick the workouts that make up the plan, or build a new one for this client.' : 'No routines yet — build one for this client, then send it.'}>
-      {(S.routines || []).map(r => <Row key={r.id} title={<>{r.emoji && <span className="tm-emoji">{r.emoji}</span>}{r.name}</>} subtitle={(r.ex || []).length + ((r.ex || []).length === 1 ? ' exercise' : ' exercises')} onClick={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))}>
-        <Check checked={!!pick[r.id]} onChange={() => setPick(p => ({ ...p, [r.id]: !p[r.id] }))} />
-      </Row>)}
-      <div style={{ padding: '8px 12px' }}><Button size="sm" variant="tinted" icon="plus" onClick={create}>New workout for {d.client.name}</Button></div>
-      {chosen.length > 0 && <div style={{ padding: 12 }}>
-        <TextArea value={note} placeholder="Note to your client" maxLength={500} onChange={e => setNote(e.target.value)} />
-        <div style={{ height: 8 }} />
-        <Button variant="primary" onClick={send}>Send plan to {d.client.name}</Button>
-      </div>}
-    </Section>
-    {d.assignments.length > 0 && <Section title="Plans sent">
-      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Plan'} subtitle={a.routines + (a.routines === 1 ? ' workout' : ' workouts') + ' · ' + rel(a.created)} value={a.status === 'accepted' ? 'started' : a.status === 'declined' ? 'not now' : 'waiting'} />)}
-    </Section>}
-    <Section title="Their workouts">
-      {d.routines.length ? d.routines.map(r => <Row key={r.id} title={r.name} value={r.count + ' ex'} />) : <div className="tm-empty">No routines yet.</div>}
-    </Section>
     <Section title="Recent workouts">
       {d.workouts.slice(0, 20).map(w => <Row key={w.id || w.d + w.name} title={w.name || 'Workout'}
         subtitle={fmtDate(w.d, true) + ' · ' + setsDone(w) + ' sets' + (w.prs?.length ? ' · ' + w.prs.length + ' PR' : '')} value={fmtVol(w.vol ?? workoutVolume(w), d.unit)} />)}

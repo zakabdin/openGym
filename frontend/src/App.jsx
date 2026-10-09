@@ -202,6 +202,7 @@ function Shell() {
               <Route path="/coach/setup" element={<CoachSetup />} />
               <Route path="/team" element={<Team />} />
               <Route path="/team/c/:id" element={<TeamClient />} />
+              <Route path="/team/plan/:id" element={<RoutineEdit tpl />} />
               <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
               <Route path="*" element={<Navigate to="/home" replace />} />
             </Routes>

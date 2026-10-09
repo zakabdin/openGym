@@ -2128,7 +2128,8 @@ const routes = {
         id: c.id, name: c.name, joined: c.created || null,
         workouts: workouts.length, lastWorkout: last ? last.d : null,
         lastSync: lastSyncOf(c, S),
-        pending: (await readAssignments(c.id)).filter(a => a.status === 'pending' && a.from === user.id).length
+        ...(mine => ({ pending: mine.filter(a => a.status === 'pending').length, accepted: mine.filter(a => a.status === 'accepted').length }))(
+          (await readAssignments(c.id)).filter(a => a.from === user.id))
       });
     }
     json(res, 200, { clients, now: Date.now() });

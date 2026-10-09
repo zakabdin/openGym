@@ -90,11 +90,14 @@ test('trainer links a client, assigns a program, client answers it', async t => 
   assert.equal(inbox[0].note, 'Week 1');
   assert.equal(inbox[0].status, 'pending');
   assert.equal((await coach.api('GET', '/api/trainer/clients')).body.clients[0].pending, 1);
+  assert.equal((await coach.api('GET', '/api/trainer/clients')).body.clients[0].accepted, 0);
 
   assert.equal((await stranger.api('POST', '/api/inbox/resolve', { id: inbox[0].id, status: 'accepted' })).status, 404);
   assert.equal((await kid.api('POST', '/api/inbox/resolve', { id: inbox[0].id, status: 'accepted' })).status, 200);
   assert.equal((await kid.api('POST', '/api/inbox/resolve', { id: inbox[0].id, status: 'declined' })).status, 404);
-  assert.equal((await coach.api('GET', '/api/trainer/clients')).body.clients[0].pending, 0);
+  const after = (await coach.api('GET', '/api/trainer/clients')).body.clients[0];
+  assert.equal(after.pending, 0);
+  assert.equal(after.accepted, 1);   // the client row's "Active" chip
 });
 
 test('trainer sees only profiles that joined them; leaving ends access; INVITE_ONLY needs a trainer link', async t => {
