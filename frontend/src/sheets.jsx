@@ -2173,7 +2173,10 @@ export function WorkoutRow({ w, onClick }) {
 export function startFlow(routineIds) {
   // The weigh-in is a setting (Settings → During a workout, issue #137): off goes straight
   // into the session with no body weight on it, same as "Start without weighing in".
-  if (S().weighIn === false) { beginWorkout(routineIds, null); return }
+  // The very first session skips it too: with no workouts and no weigh-ins yet there is no curve to
+  // keep honest, and a modal with a made-up 70 kg is a poor welcome.
+  const st = S()
+  if (st.weighIn === false || (!st.workouts.length && !st.bodyweight.length)) { beginWorkout(routineIds, null); return }
   bwSheet({ required: true, onDone: bw => beginWorkout(routineIds, bw) })
 }
 export function beginWorkout(routineIds, bw) {

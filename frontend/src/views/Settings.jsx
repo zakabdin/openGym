@@ -512,7 +512,7 @@ export default function Settings() {
       </Row>
     </Section>
 
-    {(user || MOBILE) && !IN_TELEGRAM && <NotificationsCard S={S} update={update} toast={toast} />}
+    {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
 
     {/* ---------- equipment ---------- */}
     <EquipmentCard S={S} update={update} />
@@ -707,7 +707,28 @@ function effortHelpSheet() {
 
 function NotificationsCard({ S, update, toast }) {
   if (MOBILE) return <MobileReminderCard S={S} update={update} toast={toast} />
+  if (IN_TELEGRAM) return <TelegramReminderCard S={S} update={update} />
   return <PushCard S={S} update={update} toast={toast} />
+}
+
+// Telegram Mini App: no browser push, the reminder arrives as a bot message. The server reads
+// reminder.on / time / tz, and /reminders on refuses until a tz exists, so the tz is stamped here.
+function TelegramReminderCard({ S, update }) {
+  const setReminder = patch => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), ...patch, tz: localTZ() } })
+  return (
+    <Section title={t('Notifications')}
+      footer={S.reminder?.on ? t("Only sent on days you have a routine planned and haven't logged a workout yet.") : null}>
+      <Row icon="calendar" iconTint="var(--orange)" title={t('Workout day reminder')}>
+        <Switch checked={!!S.reminder?.on} onChange={v => setReminder({ on: v })} />
+      </Row>
+      {S.reminder?.on && (
+        <Row icon="clock" iconTint="var(--purple)" title={t('Reminder time')}>
+          <input type="time" className="timef" value={S.reminder?.time || DEF.reminder.time}
+            onChange={e => setReminder({ time: e.target.value })} />
+        </Row>
+      )}
+    </Section>
+  )
 }
 
 // Mobile build: the reminder is a native local notification scheduled on planned weekdays —

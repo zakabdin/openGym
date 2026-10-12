@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { api, setRemoteAuth } from '../lib/api.js'
 import { IN_TELEGRAM, telegramSession } from '../lib/telegram.js'
+import { telegramReminderDefault } from '../lib/reminder-default.js'
 import { localTZ } from '../lib/format.js'
 import { t } from '../lib/i18n.js'
 import { registerCustom } from '../lib/exercises.js'
@@ -1498,6 +1499,11 @@ export const useStore = create((set, get) => {
         // without needing to revisit Settings.
         const restampTz = () => {
           const tz = localTZ()
+          // Telegram: the reminder starts on, once per profile (lib/reminder-default.js).
+          if (IN_TELEGRAM && !get().S.tgReminderInit) {
+            const r = telegramReminderDefault(get().S, tz, { time: DEF.reminder.time })
+            get().update(s => { s.tgReminderInit = true; if (r) s.reminder = r })
+          }
           if (get().S.reminder?.on && get().S.reminder.tz !== tz) {
             get().update(s => { s.reminder = { ...s.reminder, tz } })
           }

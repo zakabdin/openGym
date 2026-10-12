@@ -7,12 +7,13 @@ import { startFlow } from './sheets.jsx'
 
 // Start opens the quick weigh-in unless Settings → During a workout → "Weigh in before
 // workouts" is off (issue #137) — then the session begins at once, with no body weight on it.
+// A profile with no workouts and no weigh-ins skips it as well: its first session just starts.
 
 describe('the weigh-in before a workout is a setting', () => {
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true
     useUI.setState({ sheets: [], toasts: [] })
-    useStore.setState(s => ({ S: { ...s.S, active: null, routines: [], workouts: [], bodyweight: [], weighIn: true } }))
+    useStore.setState(s => ({ S: { ...s.S, active: null, routines: [], workouts: [], bodyweight: [{ d: '2026-01-01', w: 80, t: 1 }], weighIn: true } }))
   })
 
   it('on (the default): Start opens the weigh-in and the session waits for it', () => {
@@ -28,6 +29,13 @@ describe('the weigh-in before a workout is a setting', () => {
     expect(useUI.getState().sheets).toHaveLength(1)
     expect(useUI.getState().sheets[0].locked).toBe(true)
     expect(useStore.getState().S.active).toBeNull()
+  })
+
+  it('the very first session (no workouts, no weigh-ins) starts at once without asking', () => {
+    useStore.setState(s => ({ S: { ...s.S, bodyweight: [] } }))
+    act(() => startFlow([]))
+    expect(useUI.getState().sheets).toHaveLength(0)
+    expect(useStore.getState().S.active.bw).toBeNull()
   })
 
   it('off: Start begins the session at once, with no sheet and no body weight', () => {

@@ -16,6 +16,21 @@ export function initTelegram() {
     w.disableVerticalSwipes?.()   // a swipe down would close the app mid-set
     document.documentElement.classList.add('tg')
   } catch { /* an old client without these calls */ }
+  askBotMessages()
+}
+
+// The bot can only message someone who pressed Start or allowed it. A person who arrived through a
+// link never did, so reminders and PDFs would fail without a sound: Telegram's own prompt, once.
+export function askBotMessages() {
+  const w = wa()
+  try {
+    if (!IN_TELEGRAM || typeof w?.requestWriteAccess !== 'function') return false
+    if (w.initDataUnsafe?.user?.allows_write_to_pm !== false) return false
+    if (localStorage.getItem('tg_write_asked')) return false
+    localStorage.setItem('tg_write_asked', '1')
+    w.requestWriteAccess()
+    return true
+  } catch { return false }
 }
 
 // Signs in with initData and installs the Bearer token for every later request. The token is not

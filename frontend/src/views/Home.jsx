@@ -72,6 +72,19 @@ export default function Home() {
 
     {user && <PlanBanner />}
 
+    {/* A new profile has nothing to start: the way in comes before an empty week and a "Rest day". */}
+    {!S.routines.length && !S.active && (
+      <div className="card">
+        <div className="row" style={{ gap: 10, marginBottom: 6 }}>
+          <span className="lrow-i"><Icon name="sparkles" /></span>
+          <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
+        </div>
+        <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>
+        <Button variant="primary" icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
+        <div style={{ height: 8 }} /><Button onClick={() => nav('/plan')}>{t('Build my own plan')}</Button>
+      </div>
+    )}
+
     <div className="card">
       <div className="row between" style={{ marginBottom: 8 }}>
         <button className="iconbtn" style={{ width: 30, height: 30, fontSize: 15 }} onClick={() => setWeekOffset(w => w - 1)} aria-label={t('Previous week')}><Icon name="chevronLeft" /></button>
@@ -130,18 +143,6 @@ export default function Home() {
           </div>
           <Icon name="chevronRight" className="chev" />
         </div>
-      </div>
-    )}
-
-    {!S.routines.length && !S.active && (
-      <div className="card">
-        <div className="row" style={{ gap: 10, marginBottom: 6 }}>
-          <span className="lrow-i"><Icon name="sparkles" /></span>
-          <div className="big" style={{ fontSize: 22 }}>{t('Welcome!')}</div>
-        </div>
-        <div className="muted small" style={{ marginBottom: 12 }}>{t('Set up your weekly routine to get going — or load a ready-made starter plan.')}</div>
-        <Button variant="primary" icon="sparkles" onClick={starterPlanSheet}>{t('Load starter plan')}</Button>
-        <div style={{ height: 8 }} /><Button onClick={() => nav('/plan')}>{t('Build my own plan')}</Button>
       </div>
     )}
 

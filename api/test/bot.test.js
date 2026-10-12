@@ -225,7 +225,7 @@ test('setup registers the webhook with its secret, the menu and description in e
   const hook = w.calls.find(c => c.method === 'setWebhook').body;
   assert.equal(hook.url, URL_ + '/api/telegram/webhook');
   assert.equal(hook.secret_token, webhookSecret(TOKEN));
-  assert.deepEqual(hook.allowed_updates, ['message']);
+  assert.deepEqual(hook.allowed_updates, ['message', 'callback_query']);
   const cmdLangs = w.calls.filter(c => c.method === 'setMyCommands').map(c => c.body.language_code);
   assert.ok(cmdLangs.includes('az') && cmdLangs.includes('pt') && cmdLangs.includes(undefined));
   assert.ok(w.calls.some(c => c.method === 'setMyDescription' && c.body.language_code === 'az'));
@@ -265,4 +265,66 @@ test('/done offers a button that logs today in the app, with the minutes when gi
 test('/done is in the command menu, in every language', () => {
   assert.ok(COMMANDS.includes('done'));
   for (const [lang, pack] of Object.entries(PACKS)) assert.ok(pack.cmd_done && pack.doneAsk.includes('{0}') && pack.doneButton && pack.alreadyDone && pack.workoutLogged.includes('{0}'), lang);
+});
+
+test('replies carry a row of buttons that run /today, /stats and /settings in place of typing', async () => {
+  const w = world({ users: [ana], states: { u1: S({ workouts: [{ d: '2026-10-05', name: 'Push' }], bodyweight: [{ d: '2026-10-01', w: 80 }] }) } });
+  await w.say('/plan');
+  const nav = w.sent[0].reply_markup.inline_keyboard.at(-1);
+  assert.deepEqual(nav.map(b => b.callback_data), ['c:today', 'c:stats', 'c:settings']);
+  // a tap is answered (the spinner stops) and runs the command for the person who tapped
+  await w.bot.handleUpdate({ callback_query: { id: 'q1', data: 'c:stats', from: { id: 1, language_code: 'en' }, message: { chat: { id: 1, type: 'private' } } } });
+  assert.ok(w.calls.some(c => c.method === 'answerCallbackQuery' && c.body.callback_query_id === 'q1'));
+  assert.match(w.sent.at(-1).text, /Last workout[\s\S]*This week[\s\S]*Latest: 80 kg/);
+  // anything that is not one of our commands is ignored
+  const before = w.sent.length;
+  await w.bot.handleUpdate({ callback_query: { id: 'q2', data: 'c:constructor', from: { id: 1 }, message: { chat: { id: 1, type: 'private' } } } });
+  await w.bot.handleUpdate({ callback_query: { id: 'q3', data: 'x', from: { id: 1 }, message: { chat: { id: 1, type: 'private' } } } });
+  assert.equal(w.sent.length, before);
+});
+
+test('/weight 81.4 files today\'s weigh-in (one per day), a bad number only shows the latest', async () => {
+  const w = world({ users: [ana], states: { u1: S({ bodyweight: [{ d: '2026-10-01', w: 80 }] }) } });
+  await w.say('/weight 81,4');
+  assert.deepEqual(w.states.u1.bodyweight.map(b => [b.d, b.w]), [['2026-10-01', 80], ['2026-10-07', 81.4]]);
+  assert.equal(w.states.u1._rev, 4, 'devices re-pull');
+  assert.match(w.sent[0].text, /81\.4 kg/);
+  await w.say('/weight 82');
+  assert.deepEqual(w.states.u1.bodyweight.map(b => b.w), [80, 82], 'a second one the same day replaces the first');
+  await w.say('/weight 5');
+  await w.say('/weight lots');
+  assert.deepEqual(w.states.u1.bodyweight.map(b => b.w), [80, 82]);
+});
+
+test('/settings shows both switches as buttons and flips the one that is tapped', async () => {
+  const me = { ...ana };
+  const w = world({ users: [me], states: { u1: S({ reminder: { on: false, time: '08:00', tz: 'UTC' } }) } });
+  await w.say('/settings');
+  assert.deepEqual(w.sent[0].reply_markup.inline_keyboard.map(r => r[0].callback_data), ['c:settings:reminders', 'c:settings:notifications']);
+  const tap = data => w.bot.handleUpdate({ callback_query: { id: 'q', data, from: { id: 1, language_code: 'en' }, message: { chat: { id: 1, type: 'private' } } } });
+  await tap('c:settings:reminders');
+  assert.equal(w.states.u1.reminder.on, true);
+  await tap('c:settings:notifications');
+  assert.equal(me.tgMute, true);
+  await tap('c:settings:notifications');
+  assert.equal(me.tgMute, undefined);
+  // no reminder time stored yet: it points at the app instead of switching on
+  w.states.u1 = S();
+  await tap('c:settings:reminders');
+  assert.equal(w.states.u1.reminder, undefined);
+  assert.match(w.sent.at(-1).text, /reminder time/i);
+});
+
+test('/clients is in the menu for trainers only', async () => {
+  const coach = { id: 't1', name: 'Coach', role: 'trainer', tg: { id: 7 } };
+  const w = world({ users: [ana, coach], states: { u1: S(), t1: S() } });
+  await w.bot.setup({ webhookUrl: URL_ + '/hook' });
+  const names = w.calls.filter(c => c.method === 'setMyCommands').flatMap(c => c.body.commands.map(x => x.command));
+  assert.ok(!names.includes('clients'));
+  await w.say('/start', { id: 7 });
+  const scoped = w.calls.filter(c => c.method === 'setMyCommands' && c.body.scope?.chat_id === 7).at(-1);
+  assert.ok(scoped.body.commands.some(c => c.command === 'clients'));
+  assert.match(w.sent.at(-1).text, /\/clients/);
+  await w.say('/start');
+  assert.doesNotMatch(w.sent.at(-1).text, /\/clients/);
 });

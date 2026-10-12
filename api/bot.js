@@ -2,14 +2,16 @@
 // person's own language from what openGym already holds. Telegram delivers messages to a webhook
 // (POST /api/telegram/webhook, proved by a secret header); this module only decides what to say.
 //
-// Read-only except three small settings the commands exist for: the language, the day reminder and
-// whether the bot may message you. Nothing here touches workouts, routines or body weight.
+// Read-only except a few small things the commands exist for: the language, the day reminder,
+// whether the bot may message you, and a weigh-in (/weight 81.4). Nothing here touches workouts or routines.
 import crypto from 'node:crypto';
 import { LANG_CODES, LANG_NAMES, PACKS, matchLang, tr, telegramCode } from './bot-i18n.js';
 import { ABORT } from './store.js';
 
-// The commands, in menu order. `trainer` ones are answered with a polite no for everyone else.
-export const COMMANDS = ['start', 'help', 'plan', 'today', 'done', 'last', 'progress', 'weight', 'clients', 'language', 'reminders', 'notifications'];
+// The commands, in menu order. `clients` is shown to trainers only (see `menu`) and answered with a polite
+// no for everyone else. /last, /progress, /reminders and /notifications still answer when typed; they
+// left the menu because /stats and /settings (with buttons) cover them.
+export const COMMANDS = ['start', 'help', 'plan', 'today', 'done', 'stats', 'weight', 'clients', 'language', 'settings'];
 
 /** The header Telegram echoes back on every webhook call; derived from the token, so no new secret to keep. */
 export const webhookSecret = token => crypto.createHmac('sha256', String(token)).update('opengym-webhook').digest('hex').slice(0, 48);
@@ -62,28 +64,36 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
   };
   // `pdf: 'plan' | 'today'` adds a PDF button: it opens the app on a screen that makes the PDF and
   // drops it into this chat (the PDF needs the exercise catalogue, so it is made in the app).
-  const send = (chatId, text, { button, pdf, done, lang = 'en' } = {}) => call('sendMessage', {
+  // Under every reply with buttons: one tap to the next thing, in place of typing a command.
+  const navRow = lang => [
+    { text: '📅 ' + tr(lang, 'today'), callback_data: 'c:today' },
+    { text: '📊 ' + tr(lang, 'cmd_stats'), callback_data: 'c:stats' },
+    { text: '⚙️ ' + tr(lang, 'cmd_settings'), callback_data: 'c:settings' }
+  ];
+  const send = (chatId, text, { button, pdf, done, toggles, lang = 'en' } = {}) => call('sendMessage', {
     chat_id: chatId, text: String(text).slice(0, 3900), disable_web_page_preview: true,
     // `done`: the one button of /done — it opens the app on a screen that logs today's workout (minutes optional).
     ...(done !== undefined && hasButton ? { reply_markup: { inline_keyboard: [[
       { text: '✅ ' + tr(lang, 'doneButton'), web_app: { url: `${appUrl}/#/done${done ? '/' + done : ''}` } }
-    ]] } } : {}),
+    ], navRow(lang)] } } : {}),
     ...(button && hasButton ? { reply_markup: { inline_keyboard: [[
       { text: tr(lang, 'openApp'), web_app: { url: appUrl } },
       ...(pdf ? [{ text: '📄 PDF', web_app: { url: `${appUrl}/#/pdf/${pdf}` } }] : [])
-    ]] } } : {})
+    ], ...(pdf === 'today' ? [[{ text: '✅ ' + tr(lang, 'doneButton'), callback_data: 'c:done' }]] : []), navRow(lang)] } } : {}),
+    // /settings: one button per switch, answered in place (no URL, so it works without https too).
+    ...(toggles ? { reply_markup: { inline_keyboard: toggles.map(([text, data]) => [{ text, callback_data: data }]) } } : {})
   });
 
-  const commandList = (lang, withClients = true) => COMMANDS
+  const commandList = (lang, withClients = false) => COMMANDS
     .filter(c => withClients || c !== 'clients')
     .map(c => `/${c} – ${tr(lang, 'cmd_' + c)}`).join('\n');
 
   // ---- the commands: each returns { text, button? } ----------------------------------------------
   const handlers = {
-    async start({ lang }) {
-      return { text: `${tr(lang, 'intro')}\n\n${commandList(lang)}\n\n${tr(lang, 'tapButton')}`, button: true };
+    async start({ lang, user }) {
+      return { text: `${tr(lang, 'intro')}\n\n${commandList(lang, user?.role === 'trainer')}\n\n${tr(lang, 'tapButton')}`, button: true };
     },
-    async help({ lang }) { return { text: `${tr(lang, 'commands')}:\n${commandList(lang)}`, button: true }; },
+    async help({ lang, user }) { return { text: `${tr(lang, 'commands')}:\n${commandList(lang, user?.role === 'trainer')}`, button: true }; },
 
     async plan({ lang, S }) {
       const ws = Number.isInteger(S.weekStart) ? S.weekStart : 1;
@@ -142,7 +152,27 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       return { text: `${head}\n${tr(lang, 'total', workouts.length)}`, button: true };
     },
 
-    async weight({ lang, S }) {
+    // /last, /progress and /weight in one message.
+    async stats(ctx) {
+      const parts = [await handlers.last(ctx), await handlers.progress(ctx), await handlers.weight({ ...ctx, arg: '' })];
+      return { text: parts.map(p => p.text).join('\n\n'), button: true };
+    },
+
+    // The one thing the bot writes besides settings: `/weight 81.4` files a weigh-in for today, the way
+    // the app's own "Log" button does (one entry per day, a second one replaces the first).
+    async weight({ lang, S, user, arg }) {
+      const logged = /^\d{1,3}(?:[.,]\d{1,2})?$/.test(arg) ? Number(arg.replace(',', '.')) : 0;
+      if (logged >= 20 && logged <= 700) {
+        const d = todayIn(S.reminder?.tz, now()).date;
+        const out = await setState(user.id, doc => {
+          const rows = list(doc.bodyweight).filter(b => b.d !== d);
+          rows.push({ d, w: logged, t: Date.now() });
+          rows.sort((a, b) => (a.d < b.d ? -1 : 1));
+          return { ...doc, bodyweight: rows };
+        });
+        if (!out) return { text: tr(lang, 'notLinked'), button: true };
+        return { text: tr(lang, 'weightLatest', `${num(lang, logged)} ${S.unit || 'kg'}`, shortDate(lang, d)), button: true };
+      }
       const rows = list(S.bodyweight).filter(b => b.d && Number.isFinite(+b.w)).sort((a, b) => (a.d < b.d ? -1 : 1));
       if (!rows.length) return { text: tr(lang, 'weightNone'), button: true };
       const last = rows[rows.length - 1];
@@ -178,7 +208,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       const out = await setState(user.id, doc => ({ ...doc, lang: code, langAuto: false }));
       if (!out) return { text: tr(lang, 'notLinked'), button: true };
       // The command menu follows the language that was just chosen, for this chat.
-      call('setMyCommands', { commands: menu(code), scope: { type: 'chat', chat_id: chatId } });
+      call('setMyCommands', { commands: menu(code, user.role === 'trainer'), scope: { type: 'chat', chat_id: chatId } });
       return { text: tr(code, 'langSet', LANG_NAMES[code]), lang: code };
     },
 
@@ -190,6 +220,27 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       const out = await setState(user.id, doc => ({ ...doc, reminder: { ...(doc.reminder || {}), on: want === 'on' } }));
       if (!out) return { text: tr(lang, 'notLinked'), button: true };
       return { text: tr(lang, want === 'on' ? 'remindersOn' : 'remindersOff') };
+    },
+
+    // The two switches in one place: a message with a button for each, answered by flipping it.
+    async settings({ lang, user, S, arg }) {
+      if (arg === 'reminders' || arg === 'notifications') {
+        const fresh = (await store.state.get(user.id)) || S;
+        const flip = arg === 'reminders'
+          ? (fresh.reminder?.on ? 'off' : 'on') : (user.tgMute ? 'on' : 'off');
+        const out = await handlers[arg]({ lang, user, S: fresh, arg: flip });
+        if (arg === 'reminders' && out.button) return out;   // no reminder time yet: the app has to set it
+        if (arg === 'notifications') user = { ...user, tgMute: flip === 'off' };
+        S = (await store.state.get(user.id)) || S;
+      }
+      const remOn = !!S.reminder?.on, muted = !!user.tgMute;
+      return {
+        text: `${tr(lang, remOn ? 'remindersOn' : 'remindersOff')}\n${tr(lang, muted ? 'notifOff' : 'notifOn')}`,
+        toggles: [
+          [(remOn ? '🔔 ' : '🔕 ') + tr(lang, 'cmd_reminders'), 'c:settings:reminders'],
+          [(muted ? '🔕 ' : '🔔 ') + tr(lang, 'cmd_notifications'), 'c:settings:notifications']
+        ]
+      };
     },
 
     async notifications({ lang, user, arg }) {
@@ -221,24 +272,40 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
     return recent.length > 20;
   };
 
-  const menu = lang => COMMANDS.map(c => ({ command: c, description: tr(lang, 'cmd_' + c).slice(0, 256) }));
+  // `clients` is for trainers: the default menu leaves it out, and a trainer's own chat gets the full one.
+  const menu = (lang, trainer = false) => COMMANDS.filter(c => trainer || c !== 'clients')
+    .map(c => ({ command: c, description: tr(lang, 'cmd_' + c).slice(0, 256) }));
 
-  /** One Telegram update. Only private-chat text messages are answered. */
+  // One command for one person, from a typed message or a button under an earlier reply.
+  async function run(chatId, from, name, argText = '') {
+    const user = await store.users.byTg(from.id);
+    const S = user ? await store.state.get(user.id) : null;
+    let lang = pickLang(S, from.language_code || user?.tg?.lang);
+    if (!Object.hasOwn(handlers, name)) return void send(chatId, tr(lang, 'unknown'), { lang });
+    if (!OPEN.has(name) && (!user || user.disabled || !S)) return void send(chatId, tr(lang, 'notLinked'), { button: true, lang });
+    const out = await handlers[name]({ lang, user, S: S || {}, arg: String(argText).trim().split(/\s+/)[0] || '', chatId });
+    if (out?.lang) lang = out.lang;
+    // A trainer's menu shows /clients; everyone else's does not. Set when they say hello.
+    if (user?.role === 'trainer' && (name === 'start' || name === 'help')) call('setMyCommands', { commands: menu(lang, true), scope: { type: 'chat', chat_id: chatId } });
+    await send(chatId, out.text, { button: out.button, pdf: out.pdf, done: out.done, toggles: out.toggles, lang });
+  }
+
+  /** One Telegram update: a private-chat text message, or a tap on one of the buttons we put under a reply. */
   async function handleUpdate(update) {
+    const q = update?.callback_query;
+    if (q && q.from && !q.from.is_bot && q.message?.chat?.type === 'private' && typeof q.data === 'string') {
+      call('answerCallbackQuery', { callback_query_id: q.id });   // stops the button's spinner
+      const [, name, arg] = /^c:([a-z]+)(?::([a-z]+))?$/.exec(q.data) || [];
+      if (!name || !Object.hasOwn(handlers, name) || tooFast(q.message.chat.id)) return;
+      return run(q.message.chat.id, q.from, name, arg || '');
+    }
     const m = update?.message;
     if (!m || m.chat?.type !== 'private' || !m.from || m.from.is_bot || typeof m.text !== 'string') return;
     const chatId = m.chat.id;
     if (tooFast(chatId)) return;
     const cmd = /^\/([a-z_]+)(?:@\w+)?(?:\s+([\s\S]*))?$/i.exec(m.text.trim());
-    const user = await store.users.byTg(m.from.id);
-    const S = user ? await store.state.get(user.id) : null;
-    let lang = pickLang(S, m.from.language_code || user?.tg?.lang);
-    if (!cmd || !handlers[cmd[1].toLowerCase()]) return void send(chatId, tr(lang, 'unknown'), { lang });
-    const name = cmd[1].toLowerCase();
-    if (!OPEN.has(name) && (!user || user.disabled || !S)) return void send(chatId, tr(lang, 'notLinked'), { button: true, lang });
-    const out = await handlers[name]({ lang, user, S: S || {}, arg: (cmd[2] || '').trim().split(/\s+/)[0] || '', chatId });
-    if (out?.lang) lang = out.lang;
-    await send(chatId, out.text, { button: out.button, pdf: out.pdf, done: out.done, lang });
+    if (!cmd) return run(chatId, m.from, '');
+    return run(chatId, m.from, cmd[1].toLowerCase(), cmd[2] || '');
   }
 
   /**
@@ -259,7 +326,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       ok.push(await call('setMyShortDescription', { short_description: tr(lang, 'shortDescription').slice(0, 120), ...extra }));
     }
     if (hasButton) ok.push(await call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'openGym', web_app: { url: appUrl } } }));
-    ok.push(await call('setWebhook', { url: webhookUrl, secret_token: webhookSecret(token), allowed_updates: ['message'], max_connections: 10 }));
+    ok.push(await call('setWebhook', { url: webhookUrl, secret_token: webhookSecret(token), allowed_updates: ['message', 'callback_query'], max_connections: 10 }));
     const all = ok.every(Boolean);
     if (all && store.meta) await store.meta.set('bot_setup', signature);
     log.log?.('bot setup', all ? 'done' : 'incomplete');

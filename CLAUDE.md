@@ -138,8 +138,10 @@ output), `api`, `web` (multi-stage build of `frontend/` served by nginx, which a
 
 ### The Telegram bot's commands
 
-`api/bot.js` answers what people type to the bot (`/start /help /plan /today /last /progress /weight
-/clients /language /reminders /notifications`), read-only apart from those last three settings. Texts
+`api/bot.js` answers what people type to the bot (menu: `/start /help /plan /today /done /stats /weight
+/clients /language /settings`; `/last /progress /reminders /notifications` still answer when typed), read-only apart from the
+settings, the language and `/weight 81.4` (a weigh-in). Every reply with buttons carries a row of callback buttons (Today /
+Stats / Settings) handled as `callback_query` updates; `/clients` is in the menu for trainers only. Texts
 live in `api/bot-i18n.js` (17 languages incl. Azerbaijani, all with the same keys — a test enforces it;
 the app itself has no Azerbaijani pack yet). Telegram calls `POST /api/telegram/webhook`, proved by the
 `X-Telegram-Bot-Api-Secret-Token` header (derived from the bot token, no extra env). On boot, on an
