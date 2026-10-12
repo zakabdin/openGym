@@ -35,11 +35,42 @@ describe('startPlan', () => {
     expect(S.routines.map(r => r.name)).toContain('Push day A')
     expect(apiMock).toHaveBeenCalledWith('/api/inbox/resolve', expect.objectContaining({ method: 'POST' }))
   })
+  it('"add the workouts only" keeps the client\'s week even though the plan has days', async () => {
+    await startPlan(item({ 1: ['p'], 3: ['p'] }), { schedule: false })
+    const S = useStore.getState().S
+    expect(S.week).toEqual({ 2: ['mine'] })
+    expect(S.routines.map(r => r.name)).toEqual(['Mine', 'Push day A'])
+    expect(S.programs[0].prevWeek).toBeUndefined()   // nothing replaced, so nothing for Undo to restore
+  })
   it('leaves the client\'s own week alone when the plan has no days', async () => {
     await startPlan(item({}))
     const S = useStore.getState().S
     expect(S.week).toEqual({ 2: ['mine'] })
     expect(S.routines.map(r => r.name)).toEqual(['Mine', 'Push day A'])
+  })
+})
+
+describe('the preview of a plan with days', () => {
+  const open = async week => {
+    const { openPlanPreview } = await import('./PlanInbox.jsx')
+    const { useUI } = await import('../store/useUI.js')
+    await act(async () => { openPlanPreview(item(week)) })
+    const sheet = useUI.getState().sheets.at(-1)
+    await act(async () => { root.render(sheet.render ? sheet.render(() => {}) : sheet.content?.(() => {})) })
+  }
+  it('offers Replace my week / Add the workouts only when the client already has a week', async () => {
+    await open({ 1: ['p'], 3: ['p'] })
+    const labels = [...host.querySelectorAll('button')].map(b => b.textContent)
+    expect(labels).toContain('Replace my week')
+    expect(labels).toContain('Add the workouts only')
+    expect(labels).not.toContain('Start this plan')
+  })
+  it('keeps the single Start button when the client has no week yet', async () => {
+    useStore.setState(s => ({ S: { ...s.S, week: {} } }))
+    await open({ 1: ['p'], 3: ['p'] })
+    const labels = [...host.querySelectorAll('button')].map(b => b.textContent)
+    expect(labels).toContain('Start this plan')
+    expect(labels).not.toContain('Add the workouts only')
   })
 })
 

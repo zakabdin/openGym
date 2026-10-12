@@ -102,7 +102,7 @@ function MyTrainer() {
   </>
 }
 
-const chip = c => c.pending > 0 ? ['Plan waiting', 'var(--orange)'] : c.accepted > 0 ? ['Active', 'var(--green)'] : ['No plan yet', 'var(--text-3, #888)']
+const chip = c => c.pending > 0 && c.unreached > 0 ? ['Not notified', 'var(--red)'] : c.pending > 0 ? ['Plan waiting', 'var(--orange)'] : c.accepted > 0 ? ['Active', 'var(--green)'] : ['No plan yet', 'var(--text-3, #888)']
 
 function Clients() {
   const nav = useNavigate()
@@ -184,7 +184,7 @@ export function TeamClient() {
     </div>
     <div style={{ margin: '4px 0 14px' }}><Button variant="primary" icon="plus" onClick={make}>Make a plan for {d.client.name}</Button></div>
     {d.assignments.length > 0 && <Section title="Plans sent">
-      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Plan'} subtitle={a.routines + (a.routines === 1 ? ' workout' : ' workouts') + ' · ' + rel(a.created)} value={a.status === 'accepted' ? 'started' : a.status === 'declined' ? 'not now' : 'waiting'} />)}
+      {d.assignments.map(a => <Row key={a.id} icon="calendar" title={a.note || 'Plan'} subtitle={a.routines + (a.routines === 1 ? ' workout' : ' workouts') + ' · ' + rel(a.created)} value={a.status === 'accepted' ? 'started' : a.status === 'declined' ? 'not now' : a.notified === false ? 'waiting · not notified' : 'waiting'} />)}
     </Section>}
     {saved.length > 0 && <Section title="Start from a saved plan" footer="Opens a copy, so your saved plan stays as it was.">
       {saved.map(r => <Row key={r.id} title={r.name} subtitle={(r.ex || []).length + ((r.ex || []).length === 1 ? ' exercise' : ' exercises')} accessory="chevron" onClick={() => reuse(r)} />)}

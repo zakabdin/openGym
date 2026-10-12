@@ -50,12 +50,16 @@ export function verifyInitData(initData, botToken, now = Date.now(), maxAgeSec =
 
 // Best effort: a person who never pressed Start in the bot cannot be messaged, and that is not an
 // error worth failing a request over.
-export async function sendTelegramMessage(botToken, chatId, textBody, fetchImpl = fetch) {
+// `button` ({ text, url }) adds one inline button that opens the Mini App at `url`.
+export async function sendTelegramMessage(botToken, chatId, textBody, fetchImpl = fetch, button = null) {
   if (!botToken || !chatId) return false;
   try {
     const r = await fetchImpl(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: String(textBody).slice(0, 1000), disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: chatId, text: String(textBody).slice(0, 1000), disable_web_page_preview: true,
+        ...(button ? { reply_markup: { inline_keyboard: [[{ text: String(button.text).slice(0, 64), web_app: { url: button.url } }]] } } : {})
+      }),
       signal: AbortSignal.timeout(8000)
     });
     return r.ok;

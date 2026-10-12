@@ -70,3 +70,13 @@ export function resolveAssignment(list, id, status, now = Date.now()) {
   a.status = status; a.resolved = now;
   return a;
 }
+
+// Whether the bot message about a plan reached the client. `false` means they cannot be messaged (they
+// never pressed Start, or blocked the bot), so the plan waits in the app unseen; the trainer is told so
+// instead of seeing "waiting" for something nobody was told about. Mutates `list`; false when no such plan.
+export function markNotified(list, id, ok) {
+  const a = list.find(x => x.id === id);
+  if (!a || a.status !== 'pending') return false;
+  a.notified = !!ok;
+  return true;
+}

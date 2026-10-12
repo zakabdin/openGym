@@ -29,13 +29,15 @@ describe('client status chips', () => {
       '/api/trainer/clients': { clients: [
         { id: 'a', name: 'Anna', workouts: 0, pending: 1, accepted: 0 },
         { id: 'b', name: 'Bo', workouts: 3, pending: 0, accepted: 2 },
-        { id: 'c', name: 'Cy', workouts: 0, pending: 0, accepted: 0 }] },
+        { id: 'c', name: 'Cy', workouts: 0, pending: 0, accepted: 0 },
+        { id: 'd', name: 'Di', workouts: 0, pending: 1, accepted: 0, unreached: 1 }] },
       '/api/trainer/invite': { link: 'https://t.me/x?startapp=t_abc', code: 'abc' },
       '/api/trainer/mine': { trainer: null }, '/api/inbox': { items: [] }
     })
     await act(async () => { root.render(<Team />) })
     const t = host.textContent
     expect(t).toContain('Plan waiting'); expect(t).toContain('Active'); expect(t).toContain('No plan yet')
+    expect(t).toContain('Not notified')   // Di's plan was sent but the bot could not reach her
     expect(t).toContain('Invite a client')
   })
 })

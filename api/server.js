@@ -35,7 +35,7 @@ import { createBot, secretOk, pickLang } from './bot.js';
 import { tr as botText } from './bot-i18n.js';
 import {
   makeTrainerCode, trainerCodeFromStart, findTrainerByCode, clientsOf, isClientOf,
-  cleanBundle, newAssignment, addAssignment, resolveAssignment
+  cleanBundle, newAssignment, addAssignment, resolveAssignment, markNotified
 } from './trainer.js';
 import { createMediaStore, mediaLimits, mediaConfig, MediaError, HASH_RE } from './media.js';
 import { openStore, ABORT } from './store.js';
@@ -251,10 +251,15 @@ function pushEndpointError(raw) {
 // client — still gets everything, as before.
 // A message from the bot to a person who has used the Telegram sign-in: in their language, and
 // only if they have not muted the bot (/notifications off). Best effort, like every bot message.
-async function tgNotify(u, key, ...args) {
+async function tgNotify(u, key, ...args) { return tgNotifyWith(u, null, key, ...args); }
+// The same, with one button that opens the Mini App on `open` (a hash route such as '/inbox/<id>').
+// Buttons need an https origin (Telegram's rule), so without one the message goes out as plain text.
+async function tgNotifyWith(u, open, key, ...args) {
   if (!TELEGRAM_BOT_TOKEN || !u?.tg?.id || u.tgMute) return false;
   const S = await store.state.get(u.id).catch(() => null);
-  return sendTelegramMessage(TELEGRAM_BOT_TOKEN, u.tg.id, botText(pickLang(S, u.tg.lang), key, ...args));
+  const lang = pickLang(S, u.tg.lang);
+  const button = open && /^https:\/\//.test(ORIGIN) ? { text: botText(lang, open.label), url: ORIGIN.replace(/\/+$/, '') + '/#' + open.path } : null;
+  return sendTelegramMessage(TELEGRAM_BOT_TOKEN, u.tg.id, botText(lang, key, ...args), fetch, button);
 }
 // The conversation side of the bot (commands like /plan), answered from this same database.
 const pdfSends = new Map();   // profile id → when it last sent a PDF to its chat (a dozen an hour)
@@ -2116,7 +2121,7 @@ const routes = {
         const bound = await store.users.mutate(user.id, u => { if (u.trainerId) return ABORT; u.trainerId = trainer.id; });
         user = bound && bound !== ABORT ? bound : await store.users.byId(user.id);
       }
-      if (created && trainer) tgNotify(trainer, 'joined', user.name);
+      if (created && trainer) tgNotifyWith(trainer, { path: '/team/c/' + user.id, label: 'viewClient' }, 'joined', user.name);
       audit(req, created ? 'auth.telegram.register' : 'auth.telegram.ok', { user, msg: trainer ? 'trainer:' + trainer.id : undefined });
       json(res, 200, { token: makeSession(user), user: publicUser(user), created });
     }
@@ -2164,7 +2169,7 @@ const routes = {
     const user = await store.users.mutate(found.id, u => { u.trainerId = trainer.id; });
     if (!user) return json(res, 401, { error: 'not signed in' });
     audit(req, 'trainer.join', { user, target: trainer });
-    tgNotify(trainer, 'joined', user.name);
+    tgNotifyWith(trainer, { path: '/team/c/' + user.id, label: 'viewClient' }, 'joined', user.name);
     json(res, 200, { user: publicUser(user), trainer: { id: trainer.id, name: trainer.name } });
   },
 
@@ -2198,7 +2203,10 @@ const routes = {
         id: c.id, name: c.name, joined: c.created || null,
         workouts: workouts.length, lastWorkout: last ? last.d : null,
         lastSync: lastSyncOf(c, S),
-        ...(mine => ({ pending: mine.filter(a => a.status === 'pending').length, accepted: mine.filter(a => a.status === 'accepted').length }))(
+        ...(mine => ({
+          pending: mine.filter(a => a.status === 'pending').length, accepted: mine.filter(a => a.status === 'accepted').length,
+          unreached: mine.filter(a => a.status === 'pending' && a.notified === false).length
+        }))(
           (await readAssignments(c.id)).filter(a => a.from === user.id))
       });
     }
@@ -2238,7 +2246,10 @@ const routes = {
     const a = newAssignment({ from: user.id, fromName: user.name, note: text(body.note), bundle });
     await store.assignments.update(c.id, list => ({ items: addAssignment(list, a) }));
     audit(req, 'trainer.assign', { user, target: c, msg: a.id });
-    tgNotify(c, 'planSent', user.name);
+    // Whether the message got through is kept on the plan, so the trainer can see a client who was not told.
+    tgNotifyWith(c, { path: '/inbox/' + a.id, label: 'viewPlan' }, 'planSent', user.name)
+      .then(ok => store.assignments.update(c.id, list => (markNotified(list, a.id, ok) ? { items: list } : ABORT)))
+      .catch(() => {});
     json(res, 200, { id: a.id });
   },
 
@@ -2263,7 +2274,7 @@ const routes = {
     const done = a.hit;
     audit(req, done.status === 'accepted' ? 'trainer.inbox.accepted' : 'trainer.inbox.declined', { user, msg: done.id });
     const trainer = await store.users.byId(done.from);
-    tgNotify(trainer, done.status === 'accepted' ? 'planStarted' : 'planDeclined', user.name);
+    tgNotifyWith(trainer, { path: '/team/c/' + user.id, label: 'viewClient' }, done.status === 'accepted' ? 'planStarted' : 'planDeclined', user.name);
     json(res, 200, { ok: true });
   },
 

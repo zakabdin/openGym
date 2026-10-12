@@ -43,3 +43,13 @@ test('bots and malformed users are refused', () => {
   assert.equal(verifyInitData(signInitData(fresh({ user: '{nope' })), TOKEN, now), null);
   assert.equal(verifyInitData(signInitData(fresh({ user: JSON.stringify({ id: 'x' }) })), TOKEN, now), null);
 });
+
+test('sendTelegramMessage can carry one button that opens the Mini App', async () => {
+  const { sendTelegramMessage } = await import('../telegram.js');
+  const bodies = [];
+  const fetchImpl = async (_u, init) => { bodies.push(JSON.parse(init.body)); return { ok: true }; };
+  assert.equal(await sendTelegramMessage('t', 5, 'hi', fetchImpl), true);
+  assert.equal(bodies[0].reply_markup, undefined);
+  await sendTelegramMessage('t', 5, 'hi', fetchImpl, { text: 'View the plan', url: 'https://gym.example/#/inbox/abc' });
+  assert.deepEqual(bodies[1].reply_markup.inline_keyboard, [[{ text: 'View the plan', web_app: { url: 'https://gym.example/#/inbox/abc' } }]]);
+});

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   trainerCodeFromStart, findTrainerByCode, clientsOf, isClientOf, cleanBundle,
-  newAssignment, addAssignment, resolveAssignment, MAX_ASSIGNMENTS
+  newAssignment, addAssignment, resolveAssignment, markNotified, MAX_ASSIGNMENTS
 } from '../trainer.js';
 
 test('deep-link parameter', () => {
@@ -46,4 +46,18 @@ test('inbox: newest first, capped, resolved once', () => {
   assert.equal(resolveAssignment(list, id, 'accepted', 5).status, 'accepted');
   assert.equal(resolveAssignment(list, id, 'declined'), null);
   assert.equal(resolveAssignment(list, 'missing', 'accepted'), null);
+});
+
+test('markNotified records whether the bot reached the client, for a waiting plan only', () => {
+  const bundle = { routines: [{ id: 'r', name: 'A', ex: [] }] };
+  const a = newAssignment({ from: 't', fromName: 'Coach', note: '', bundle });
+  const list = addAssignment([], a);
+  assert.equal(markNotified(list, a.id, false), true);
+  assert.equal(list[0].notified, false);
+  assert.equal(markNotified(list, a.id, true), true);
+  assert.equal(list[0].notified, true);
+  assert.equal(markNotified(list, 'nope', true), false);
+  resolveAssignment(list, a.id, 'accepted');
+  assert.equal(markNotified(list, a.id, false), false, 'an answered plan is left as it was');
+  assert.equal(list[0].notified, true);
 });

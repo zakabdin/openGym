@@ -39,11 +39,14 @@ export function usePendingPlans() {
 export const planTitle = item => item.bundle?.name || item.bundle?.routines?.[0]?.name || 'New plan'
 
 /** Put the plan in the profile and the week, then tell the trainer. Resolves to what was added. */
-export async function startPlan(item) {
+// `schedule` says whether the plan's days go into the week: left out, it follows the plan (days → yes).
+// "Add the workouts only" passes false, so a client mid-programme keeps their own week.
+export async function startPlan(item, { schedule } = {}) {
   let res
   // A plan with no days leaves the client's own week alone; with days it sets the week.
   const days = parsePlan(item.bundle, useStore.getState().S.unit).scheduledDays
-  useStore.getState().update(s => { res = applyProgram(s, item, { schedule: days > 0 }) })
+  const setWeek = days > 0 && schedule !== false
+  useStore.getState().update(s => { res = applyProgram(s, item, { schedule: setWeek }) })
   telegramHaptic('success')
   await api('/api/inbox/resolve', { method: 'POST', body: JSON.stringify({ id: item.id, status: 'accepted' }) })
   return res
@@ -61,6 +64,7 @@ function Preview({ item, close, onDone }) {
   try { plan = parsePlan(item.bundle, unit) } catch { plan = null }
   if (!plan) return <><h3>Plan</h3><div className="muted">This plan can’t be opened.</div><Button onClick={close}>Close</Button></>
 
+  const choose = plan.scheduledDays > 0 && hasWeek   // the plan has days and so does the client's week
   const dayOf = {}
   WEEK.forEach(d => [].concat(plan.week[d] || []).forEach(id => { (dayOf[id] = dayOf[id] || []).push(DAYS[d]) }))
   const run = async fn => { setBusy(true); try { await fn() } catch (e) { toast(e.message) } setBusy(false) }
@@ -91,8 +95,9 @@ function Preview({ item, close, onDone }) {
         </div>}
       </div>)}
     </div>
-    {plan.scheduledDays > 0 && <div className="muted small" style={{ marginBottom: 10 }}>{hasWeek ? 'This replaces your current week with the days above.' : 'This sets your week to the days above.'} You can undo it right after.</div>}
-    <Button variant="primary" disabled={busy} onClick={() => run(async () => { await startPlan(item); setStarted(true) })}>Start this plan</Button>
+    {plan.scheduledDays > 0 && <div className="muted small" style={{ marginBottom: 10 }}>{hasWeek ? 'Your week already has workouts. Replace it with the days above, or add these workouts and keep your week as it is.' : 'This sets your week to the days above.'} You can undo it right after.</div>}
+    <Button variant="primary" disabled={busy} onClick={() => run(async () => { await startPlan(item); setStarted(true) })}>{choose ? 'Replace my week' : 'Start this plan'}</Button>
+    {choose && <><div style={{ height: 8 }} /><Button disabled={busy} onClick={() => run(async () => { await startPlan(item, { schedule: false }); setStarted(true) })}>Add the workouts only</Button></>}
     <div style={{ height: 8 }} />
     <Button disabled={busy} onClick={() => run(async () => { await declinePlan(item); toast('Not now — your trainer was told'); close(); onDone?.() })}>Not now</Button>
   </>

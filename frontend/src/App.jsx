@@ -33,6 +33,7 @@ import Plan from './views/Plan.jsx'
 import RoutineEdit from './views/RoutineEdit.jsx'
 import PdfToChat from './views/PdfToChat.jsx'
 import DoneToday from './views/DoneToday.jsx'
+import InboxPlan from './views/InboxPlan.jsx'
 import Workout from './views/Workout.jsx'
 import Stats from './views/Stats.jsx'
 import History from './views/History.jsx'
@@ -205,6 +206,7 @@ function Shell() {
               <Route path="/pdf/:kind" element={<PdfToChat />} />
               <Route path="/done" element={<DoneToday />} />
               <Route path="/done/:minutes" element={<DoneToday />} />
+              <Route path="/inbox/:id" element={<InboxPlan />} />
               <Route path="/team" element={<Team />} />
               <Route path="/team/c/:id" element={<TeamClient />} />
               <Route path="/team/plan/:id" element={<RoutineEdit tpl />} />

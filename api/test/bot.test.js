@@ -328,3 +328,7 @@ test('/clients is in the menu for trainers only', async () => {
   await w.say('/start');
   assert.doesNotMatch(w.sent.at(-1).text, /\/clients/);
 });
+
+test('the buttons on the notifications have a label in every language', () => {
+  for (const [lang, pack] of Object.entries(PACKS)) assert.ok(pack.viewPlan && pack.viewClient, lang);
+});
