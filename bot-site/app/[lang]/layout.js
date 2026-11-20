@@ -1,9 +1,14 @@
 import '../globals.css'
 import Link from 'next/link'
+import Script from 'next/script'
 import { notFound } from 'next/navigation'
 import { SITE_URL, APP_URL, BOT_URL, BOT, REPO_URL } from '@/lib/site'
 import { LANGS, T, isLang } from '@/lib/i18n'
 import { alternates, og } from '@/lib/seo'
+import Analytics from '@/components/Analytics'
+
+// Google Tag Manager container (set NEXT_PUBLIC_GTM_ID to change or to '' to switch off).
+const GTM_ID = process.env.NEXT_PUBLIC_GTM_ID ?? 'GTM-TLHP9HTJ'
 
 export const dynamicParams = false
 export const generateStaticParams = () => LANGS.map(lang => ({ lang }))
@@ -33,8 +38,16 @@ export default async function Layout({ children, params }) {
   return (
     <html lang={t.htmlLang}>
       <body>
+        {GTM_ID && (
+          <>
+            <Script id="gtm" strategy="afterInteractive">{`window.dataLayer=window.dataLayer||[];window.dataLayer.push({'gtm.start':new Date().getTime(),event:'gtm.js'});`}</Script>
+            <Script id="gtm-js" src={`https://www.googletagmanager.com/gtm.js?id=${GTM_ID}`} strategy="afterInteractive" />
+            <noscript><iframe src={`https://www.googletagmanager.com/ns.html?id=${GTM_ID}`} height="0" width="0" style={{ display: 'none', visibility: 'hidden' }} /></noscript>
+          </>
+        )}
         {/* Old chat buttons and bookmarks open opengym.one/#/…, which is now the app's subdomain. */}
         <script dangerouslySetInnerHTML={{ __html: `if(location.hash.indexOf('#/')===0)location.replace(${JSON.stringify(APP_URL + '/')}+location.hash)` }} />
+        {GTM_ID && <Analytics lang={lang} botUrl={BOT_URL} />}
         <header className="nav">
           <Link href={`/${lang}`} className="logo"><span className="dot" />openGym</Link>
           <nav>

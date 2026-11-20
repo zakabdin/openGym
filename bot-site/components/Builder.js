@@ -5,6 +5,7 @@ import Picker from './Picker'
 import { drawPlan, pagesToPdf, downloadPdf } from '@/lib/pdf'
 import { T } from '@/lib/i18n'
 import { BOT, BOT_URL, IMG_BASE } from '@/lib/site'
+import { track } from '@/lib/track'
 
 export default function Builder({ lang }) {
   const t = T[lang], b = t.b
@@ -17,13 +18,14 @@ export default function Builder({ lang }) {
   const [title, setTitle] = useState(b.defaultTitle)
 
   const toggle = k => setEq(e => (e.includes(k) ? e.filter(x => x !== k) : [...e, k]))
-  const make = (s = seed) => { if (eq.length) setPlan(generate({ goal, days, eq, minutes, seed: s })) }
-  const regen = () => { const s = seed + 1; setSeed(s); make(s) }
+  const make = (s = seed) => { if (eq.length) { setPlan(generate({ goal, days, eq, minutes, seed: s })); track('plan_generated', { goal, days, minutes, equipment: eq.join(','), equipment_count: eq.length, seed: s }) } }
+  const regen = () => { track('plan_shuffled', { goal, days }); const s = seed + 1; setSeed(s); make(s) }
   const edit = (di, fn) => setPlan(p => ({ ...p, days: p.days.map((d, i) => (i === di ? { ...d, exercises: fn(d.exercises) } : d)) }))
   const [picking, setPicking] = useState(null) // { day, idx } — idx null adds, a number swaps
   const onPick = id => {
     const { day, idx } = picking
     edit(day, ex => (idx === null ? [...ex, newExercise(id, goal)] : ex.map((y, j) => (j === idx ? { ...y, i: id, t: exById(id).t, e: exById(id).e } : y))))
+    track(idx === null ? 'exercise_added' : 'exercise_swapped', { exercise_id: id, day })
     setPicking(null)
   }
   const sub = x => `${t.muscles[x.t] || x.t} · ${t.equipNames[x.e] || x.e}`
@@ -31,6 +33,7 @@ export default function Builder({ lang }) {
   const [busy, setBusy] = useState(false)
   const pdf = async () => {
     setBusy(true)
+    track('pdf_download', { goal, days: plan.days.length, minutes, exercises: plan.days.reduce((n, d) => n + d.exercises.length, 0), lang })
     const pages = await drawPlan({
       title, goalLabel: b.goals[goal], perWeek: b.perWeek(plan.days.length), note: b.notes[goal], labels: b,
       days: plan.days.map((d, i) => ({ name: b.day(i + 1, d.kind), exercises: d.exercises.map(x => ({ name: nameOf(x.i, lang), sub: sub(x), sets: x.sets, reps: x.reps, rest: b.secs(x.rest), img: IMG_BASE + exById(x.i).m })) })),
