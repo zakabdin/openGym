@@ -183,3 +183,12 @@ describe('a failed proof of ownership', () => {
       .toBe('Ana · removing a passkey · the passkey confirming the change was rejected')
   })
 })
+
+describe('bot usage rows', () => {
+  it('reads typed commands, button taps and the two failure shapes', () => {
+    expect(auditLabel('bot.cmd.plan')).toBe('Bot: /plan')
+    expect(auditLabel('bot.btn.stats')).toBe('Bot: tapped stats')
+    expect(auditLabel('bot.unlinked')).toMatch(/without a linked account/)
+    expect(auditLabel('bot.unknown')).toBe('Bot: unknown command')
+  })
+})

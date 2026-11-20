@@ -8,8 +8,8 @@ import { PACKS, LANG_CODES, tr } from '../bot-i18n.js';
 const TOKEN = '123456:TEST-token';
 const URL_ = 'https://gym.example';
 
-function world({ users = [], states = {}, assignments = {} } = {}) {
-  const sent = [], calls = [], metaMap = new Map();
+function world({ users = [], states = {}, assignments = {}, auditFails = false } = {}) {
+  const sent = [], calls = [], audits = [], metaMap = new Map();
   const byId = Object.fromEntries(users.map(u => [u.id, u]));
   const store = {
     users: {
@@ -22,6 +22,7 @@ function world({ users = [], states = {}, assignments = {} } = {}) {
       update: async (uid, fn) => { const out = await fn(states[uid] ?? null); if (out && out.write) states[uid] = out.write; return out; }
     },
     assignments: { get: async uid => assignments[uid] || [] },
+    audit: { add: async r => { if (auditFails) throw new Error('db down'); audits.push(r); } },
     meta: { get: async k => metaMap.get(k) ?? null, set: async (k, v) => { metaMap.set(k, v); } }
   };
   const fetchImpl = async (url, init) => {
@@ -32,7 +33,7 @@ function world({ users = [], states = {}, assignments = {} } = {}) {
   };
   const bot = createBot({ store, token: TOKEN, appUrl: URL_, fetchImpl, log: { log() {}, error() {} }, now: () => new Date('2026-10-07T09:00:00Z') });  // a Wednesday
   const say = (text, from = {}, chat = {}) => bot.handleUpdate({ message: { text, chat: { id: from.id ?? 1, type: 'private', ...chat }, from: { id: 1, language_code: 'en', ...from } } });
-  return { bot, say, sent, calls, states, users, metaMap };
+  return { bot, say, sent, calls, states, users, metaMap, audits };
 }
 const ana = { id: 'u1', name: 'Ana', tg: { id: 1 } };
 const S = (over = {}) => ({
@@ -331,4 +332,27 @@ test('/clients is in the menu for trainers only', async () => {
 
 test('the buttons on the notifications have a label in every language', () => {
   for (const [lang, pack] of Object.entries(PACKS)) assert.ok(pack.viewPlan && pack.viewClient, lang);
+});
+
+test('usage analytics: a typed command and a button tap are logged by name, never by text', async () => {
+  const w = world({ users: [ana], states: { u1: S() } });
+  await w.say('/plan');
+  await w.bot.handleUpdate({ callback_query: { id: 'q', data: 'c:stats', from: { id: 1 }, message: { chat: { id: 1, type: 'private' } } } });
+  await w.say('/weight 81.4');
+  await new Promise(r => setImmediate(r));
+  const evs = w.audits.map(a => a.ev);
+  assert.ok(evs.includes('bot.cmd.plan') && evs.includes('bot.btn.stats') && evs.includes('bot.cmd.weight'));
+  assert.ok(w.audits.every(a => a.uid === 'u1' && !JSON.stringify(a).includes('81.4')));
+});
+
+test('usage analytics: strangers, unknown commands and a failing log', async () => {
+  const w = world({ users: [], states: {} });
+  await w.say('/plan');
+  await w.say('/start');
+  await w.say('/nonsense');
+  assert.deepEqual(w.audits.map(a => a.ev + ':' + (a.msg || '')), ['bot.unlinked:plan', 'bot.cmd.start:new', 'bot.unknown:']);
+  const bad = world({ users: [ana], states: { u1: S() }, auditFails: true });   // a log write that rejects must not stop the reply
+  const before = bad.sent.length;
+  await bad.say('/help');
+  assert.equal(bad.sent.length, before + 1);
 });

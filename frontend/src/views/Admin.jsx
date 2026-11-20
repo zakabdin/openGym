@@ -4,7 +4,7 @@ import { useStore } from '../store/useStore.js'
 import { useUI } from '../store/useUI.js'
 import { api } from '../lib/api.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur } from '../lib/format.js'
-import { auditCat, auditLine, fmtWhen } from '../lib/audit.js'
+import { auditCat, auditLine, fmtWhen, botLabel } from '../lib/audit.js'
 import { workoutVolume, setsDone } from '../lib/history.js'
 import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
@@ -216,6 +216,9 @@ function AuditCard({ tick }) {
       .then(() => { toast('Activity log cleared'); pick(cat) }).catch(e => toast(e.message))
   })
 
+  const [bot, setBot] = useState(null)
+  useEffect(() => { if (cat === 'bot') api('/api/admin/bot-stats?days=7').then(setBot).catch(() => {}) }, [cat, tick])
+
   if (meta && !meta.enabled) return null      // AUDIT_LOG=0 — the card isn't there at all
 
   return <div className="card">
@@ -228,9 +231,17 @@ function AuditCard({ tick }) {
         + (meta.ip_mode === 'off' ? ', without IP addresses' : '') + '.' : ''}
     </div>
     <div className="chips" style={{ marginBottom: 10 }}>
-      {[['', 'All'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['fail', 'Failed']].map(([v, l]) =>
+      {[['', 'All'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['bot', 'Bot'], ['fail', 'Failed']].map(([v, l]) =>
         <button key={v} className={'chip' + (cat === v ? ' on' : '')} onClick={() => pick(v)}>{l}</button>)}
     </div>
+    {cat === 'bot' && bot && <div style={{ marginBottom: 10 }}>
+      <div className="small" style={{ fontWeight: 600 }}>
+        {[['24 h', bot.h24], ['7 days', bot.d7], ['30 days', bot.d30]].map(([l, w]) => l + ': ' + fmtNum(w.users) + ' people, ' + fmtNum(w.events) + ' actions').join(' · ')}</div>
+      <div className="dim" style={{ fontSize: '.72rem', marginTop: 4 }}>Last {bot.days} days, most used first</div>
+      {bot.top.map(t => <div key={t.ev} className="row between small" style={{ padding: '3px 2px' }}>
+        <span>{botLabel(t.ev) || t.ev}</span><span className="muted">{fmtNum(t.n)} · {fmtNum(t.users)} people</span></div>)}
+      {!bot.top.length && <div className="adm-empty">No bot activity yet.</div>}
+    </div>}
     {rows.map(e => {
       const line = auditLine(e)
       return <div key={e.id} className="row between" style={{ padding: '8px 2px', borderBottom: 'var(--hair) solid var(--sep)' }}>

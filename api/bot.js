@@ -276,15 +276,26 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
   const menu = (lang, trainer = false) => COMMANDS.filter(c => trainer || c !== 'clients')
     .map(c => ({ command: c, description: tr(lang, 'cmd_' + c).slice(0, 256) }));
 
+  // One row in the activity log. Fire-and-forget: a log that can't be written must never break a reply.
+  // Only a known command name, a language code or 'new'/'returning' ever goes into `msg`.
+  function record(ev, user, msg = '') {
+    try {
+      Promise.resolve(store.audit?.add({ ts: now().getTime(), ev, ok: true, ...(user ? { uid: user.id, name: String(user.name || '').slice(0, 40) } : {}), ...(msg ? { msg: String(msg).slice(0, 40) } : {}) }))
+        .catch(e => log.error?.('bot audit', e.message));
+    } catch (e) { log.error?.('bot audit', e.message); }
+  }
+
   // One command for one person, from a typed message or a button under an earlier reply.
-  async function run(chatId, from, name, argText = '') {
+  async function run(chatId, from, name, argText = '', via = 'cmd') {
     const user = await store.users.byTg(from.id);
     const S = user ? await store.state.get(user.id) : null;
     let lang = pickLang(S, from.language_code || user?.tg?.lang);
-    if (!Object.hasOwn(handlers, name)) return void send(chatId, tr(lang, 'unknown'), { lang });
-    if (!OPEN.has(name) && (!user || user.disabled || !S)) return void send(chatId, tr(lang, 'notLinked'), { button: true, lang });
+    if (!Object.hasOwn(handlers, name)) { record('bot.unknown', user); return void send(chatId, tr(lang, 'unknown'), { lang }); }
+    if (!OPEN.has(name) && (!user || user.disabled || !S)) { record('bot.unlinked', user, name); return void send(chatId, tr(lang, 'notLinked'), { button: true, lang }); }
     const out = await handlers[name]({ lang, user, S: S || {}, arg: String(argText).trim().split(/\s+/)[0] || '', chatId });
     if (out?.lang) lang = out.lang;
+    // Usage analytics for the admin activity log: which command or button, by whom. Never the text typed.
+    record('bot.' + via + '.' + name, user, name === 'start' ? (user ? 'returning' : 'new') : name === 'language' ? lang : '');
     // A trainer's menu shows /clients; everyone else's does not. Set when they say hello.
     if (user?.role === 'trainer' && (name === 'start' || name === 'help')) call('setMyCommands', { commands: menu(lang, true), scope: { type: 'chat', chat_id: chatId } });
     await send(chatId, out.text, { button: out.button, pdf: out.pdf, done: out.done, toggles: out.toggles, lang });
@@ -297,7 +308,7 @@ export function createBot({ store, token, appUrl = '', fetchImpl = fetch, log = 
       call('answerCallbackQuery', { callback_query_id: q.id });   // stops the button's spinner
       const [, name, arg] = /^c:([a-z]+)(?::([a-z]+))?$/.exec(q.data) || [];
       if (!name || !Object.hasOwn(handlers, name) || tooFast(q.message.chat.id)) return;
-      return run(q.message.chat.id, q.from, name, arg || '');
+      return run(q.message.chat.id, q.from, name, arg || '', 'btn');
     }
     const m = update?.message;
     if (!m || m.chat?.type !== 'private' || !m.from || m.from.is_bot || typeof m.text !== 'string') return;

@@ -2625,6 +2625,14 @@ const routes = {
     });
   },
 
+  // Bot usage numbers for the dashboard card: events and people over 24 h / 7 d / 30 d, plus
+  // what was used (`bot.cmd.*` typed, `bot.btn.*` tapped, `bot.unlinked`, `bot.unknown`).
+  'GET /api/admin/bot-stats': async (req, res) => {
+    if (!await requireAdmin(req, res)) return;
+    const days = Math.max(1, Math.min(90, +new URL(req.url, 'http://x').searchParams.get('days') || 7));
+    json(res, 200, { ...(await store.audit.botStats({ days })), now: Date.now() });
+  },
+
   // Deleting the log is itself logged, and the ids are not reset — so a clear always leaves a
   // visible gap in the ids and can't be used to quietly erase a trace. The table is the export:
   // `psql -c "COPY audit TO STDOUT"` reads it directly.

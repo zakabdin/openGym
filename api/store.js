@@ -603,16 +603,39 @@ export async function openStore({ url, schema, log = console } = {}) {
       )).rows.map(auditOut);
       return { rows, total };
     },
-    // Age first, then the newest `max` of what is left. Returns how many rows it removed.
-    async prune({ days = 0, max = 0 } = {}) {
+    // Age first, then the newest `max` of what is left. Bot usage rows (`bot.*`) are counted apart
+    // and kept for less, so a busy bot can never push sign-ins and admin changes out of the log.
+    // Returns how many rows it removed.
+    async prune({ days = 0, max = 0, botDays = 30, botMax = 50000 } = {}) {
       let n = 0;
-      if (days) n += (await q('DELETE FROM audit WHERE ts < $1', [Date.now() - days * 86400000])).rowCount;
-      if (max) {
-        n += (await q(
-          'DELETE FROM audit WHERE id <= (SELECT id FROM audit ORDER BY id DESC OFFSET $1 LIMIT 1)', [max]
-        )).rowCount;
-      }
+      const old = (cond, d) => q(`DELETE FROM audit WHERE ts < $1 AND ${cond}`, [Date.now() - d * 86400000]);
+      const cap = async (cond, m) => (await q(
+        `DELETE FROM audit WHERE ${cond} AND id <= (SELECT id FROM audit WHERE ${cond} ORDER BY id DESC OFFSET $1 LIMIT 1)`, [m]
+      )).rowCount;
+      if (days) n += (await old("ev NOT LIKE 'bot.%'", days)).rowCount;
+      if (max) n += await cap("ev NOT LIKE 'bot.%'", max);
+      const bd = days ? Math.min(botDays, days) : botDays;
+      if (bd) n += (await old("ev LIKE 'bot.%'", bd)).rowCount;
+      if (botMax) n += await cap("ev LIKE 'bot.%'", botMax);
       return n;
+    },
+    // Bot usage for the admin dashboard: events and distinct people over 24 h / 7 d / 30 d, and
+    // what was used, per command or button, over the last `days`.
+    async botStats({ days = 7 } = {}) {
+      const now = Date.now();
+      const win = async ms => {
+        const r = (await q("SELECT count(*)::int AS events, count(DISTINCT uid)::int AS users FROM audit WHERE ev LIKE 'bot.%' AND ts >= $1", [now - ms])).rows[0];
+        return { events: r.events, users: r.users };
+      };
+      const top = (await q(
+        "SELECT ev, count(*)::int AS n, count(DISTINCT uid)::int AS users FROM audit WHERE ev LIKE 'bot.%' AND ts >= $1 GROUP BY ev ORDER BY n DESC LIMIT 40",
+        [now - days * 86400000]
+      )).rows;
+      const daily = (await q(
+        "SELECT (ts / 86400000)::bigint AS d, count(*)::int AS n, count(DISTINCT uid)::int AS users FROM audit WHERE ev LIKE 'bot.%' AND ts >= $1 GROUP BY d ORDER BY d",
+        [now - days * 86400000]
+      )).rows.map(r => ({ day: Number(r.d) * 86400000, events: r.n, users: r.users }));
+      return { h24: await win(86400000), d7: await win(7 * 86400000), d30: await win(30 * 86400000), days, top, daily };
     },
     // Ids are an identity column: clearing leaves a visible gap, as the file log's counter did.
     async clear() {

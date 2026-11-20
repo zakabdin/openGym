@@ -84,7 +84,14 @@ const LABELS = {
 }
 // An unknown event is shown raw rather than dropped or rendered as "undefined": a dashboard
 // that is one version behind the server should still say *something* truthful.
-export const auditLabel = ev => LABELS[ev] || String(ev || 'Unknown event')
+// Bot usage rows are `bot.cmd.<command>` (typed) and `bot.btn.<command>` (a button under a reply).
+const BOT = { unlinked: 'Bot: someone without a linked account tried a command', unknown: 'Bot: unknown command' }
+export function botLabel(ev) {
+  const m = /^bot\.(cmd|btn)\.([a-z_]+)$/.exec(ev || '')
+  if (m) return m[1] === 'cmd' ? 'Bot: /' + m[2] : 'Bot: tapped ' + m[2]
+  return BOT[String(ev || '').slice(4)] || ''
+}
+export const auditLabel = ev => LABELS[ev] || botLabel(ev) || String(ev || 'Unknown event')
 
 const REASONS = {
   'challenge-expired': 'the sign-in took too long and expired',

@@ -2285,10 +2285,10 @@ paths:
           in: query
           schema:
             type: string
-            enum: [auth, admin, fail]
+            enum: [auth, admin, bot, fail]
           description: >-
             Filter — `fail` keeps only failed events; any other value keeps events
-            whose name starts with `<cat>.` (in practice `auth` or `admin`).
+            whose name starts with `<cat>.` (in practice `auth`, `admin` or `bot`).
       responses:
         '200':
           description: One page of the log.
@@ -2319,6 +2319,54 @@ paths:
                       max: { type: integer, description: 'Event cap (0 = none).' }
                       days: { type: integer, description: 'Age cap in days (0 = none).' }
                   now: { type: number, description: Server time (ms). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/admin/bot-stats:
+    get:
+      tags: [admin]
+      operationId: adminBotStats
+      summary: 'Admin: Telegram bot usage'
+      description: |
+        Usage of the Telegram bot, read from the `bot.*` rows of the activity log:
+        `bot.cmd.<command>` (typed), `bot.btn.<command>` (a button under a reply),
+        `bot.unlinked` (someone without an account tried a command) and `bot.unknown`.
+        Only the command name is recorded, never the text a person typed. Bot rows are
+        kept for 30 days / 50,000 rows, apart from the security events.
+      parameters:
+        - name: days
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 90, default: 7 }
+          description: Window for `top` and `daily`.
+      responses:
+        '200':
+          description: Totals, the most used commands and a per-day series.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  h24: { $ref: '#/components/schemas/BotWindow' }
+                  d7: { $ref: '#/components/schemas/BotWindow' }
+                  d30: { $ref: '#/components/schemas/BotWindow' }
+                  days: { type: integer }
+                  top:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ev: { type: string }
+                        n: { type: integer }
+                        users: { type: integer }
+                  daily:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day: { type: number, description: 'Start of the UTC day (ms).' }
+                        events: { type: integer }
+                        users: { type: integer }
+                  now: { type: number }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
@@ -3788,6 +3836,11 @@ components:
           description: Resolved display name (only in GET /api/admin/invites).
       additionalProperties: true
 
+    BotWindow:
+      type: object
+      properties:
+        events: { type: integer, description: 'Bot actions in the window.' }
+        users: { type: integer, description: 'Distinct signed-up people who used the bot.' }
     AuditEvent:
       type: object
       description: One line of the audit log.
