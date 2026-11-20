@@ -6,6 +6,7 @@ import { api } from '../lib/api.js'
 import { fmtDate, fmtNum, fmtVol, fmtDur } from '../lib/format.js'
 import { auditCat, auditLine, fmtWhen, botLabel } from '../lib/audit.js'
 import { workoutVolume, setsDone } from '../lib/history.js'
+import { EXIDX } from '../lib/exercises.js'
 import { confirmSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import { Button } from '../components/ui.jsx'
@@ -41,6 +42,64 @@ function ResetCodeSheet({ name, email, code, expires, close }) {
     <button className="adm-code" style={{ fontSize: 22, width: '100%', padding: '14px 0' }} onClick={copy} aria-label="copy code">{code}</button>
     <div style={{ height: 12 }} />
     <Button variant="primary" onClick={close}>Done</Button>
+  </>
+}
+
+// A person's plan as they set it up, read-only: the week, each routine with its exercises, what a
+// trainer sent them, and who they train with. Names come from the built-in catalogue, else from
+// the person's own exercises, else the raw id.
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const asIds = v => [].concat(v ?? []).filter(Boolean)
+function PlanSection({ d }) {
+  const plan = d.plan
+  const [open, setOpen] = useState(null)       // the routine whose exercises are showing
+  if (!plan) return null
+  const custom = Object.fromEntries((plan.customEx || []).map(c => [c.id, c.n]))
+  const exName = id => EXIDX[id]?.n || custom[id] || id
+  const byId = Object.fromEntries(plan.routines.map(r => [r.id, r]))
+  const names = ids => asIds(ids).map(id => byId[id]?.name).filter(Boolean)
+  const order = [0, 1, 2, 3, 4, 5, 6].map(i => (plan.weekStart + i) % 7)
+  const any = order.some(wd => names(plan.week[wd]).length)
+  const detail = e => [e.sets && e.reps ? e.sets + '×' + e.reps : e.sets ? e.sets + ' sets' : e.reps ? e.reps + ' reps' : '',
+    e.mode && e.mode !== 'reps' ? e.mode : '', e.dur ? e.dur + 's' : '', e.rest ? 'rest ' + e.rest + 's' : ''].filter(Boolean).join(' · ')
+  const upcoming = Object.entries(plan.dayPlan || {})
+  const STATUS = { pending: 'adm-pill acc', accepted: 'adm-pill', declined: 'adm-pill bad' }
+  return <>
+    {(d.trainer || d.isTrainer) && <div className="row" style={{ gap: 6, flexWrap: 'wrap', margin: '0 0 8px' }}>
+      {d.trainer && <span className="adm-pill">trainer {d.trainer.name || d.trainer.id}</span>}
+      {d.isTrainer && <span className="adm-pill acc">trainer · {(d.clients || []).length} client{(d.clients || []).length === 1 ? '' : 's'}</span>}
+    </div>}
+    {d.isTrainer && (d.clients || []).length > 0 && <div className="dim small" style={{ marginBottom: 8 }}>Clients: {d.clients.map(c => c.name).join(', ')}</div>}
+    <h4 className="sec">Weekly plan</h4>
+    {any ? <div className="list" style={{ gap: 0 }}>
+      {order.map(wd => <div key={wd} className="row between" style={{ padding: '6px 2px', borderBottom: '1px solid var(--sep)' }}>
+        <span className="small" style={{ fontWeight: 600 }}>{DAYS[wd]}</span>
+        <span className="small muted">{names(plan.week[wd]).join(' + ') || 'rest'}</span>
+      </div>)}
+    </div> : <div className="adm-empty">No weekly plan set.</div>}
+    {upcoming.length > 0 && <div className="dim small" style={{ marginTop: 6 }}>
+      One-off changes: {upcoming.map(([date, ids]) => fmtDate(date, true) + ' → ' + (names(ids).join(' + ') || 'rest')).join(' · ')}</div>}
+    <h4 className="sec">Routines</h4>
+    {plan.routines.length ? plan.routines.map(r => <div key={r.id} style={{ borderBottom: '1px solid var(--sep)' }}>
+      <button className="row between" style={{ width: '100%', padding: '9px 2px', background: 'none', border: 0, color: 'inherit', textAlign: 'start' }}
+        aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+        <span className="small" style={{ fontWeight: 600 }}>{r.emoji ? r.emoji + ' ' : ''}{r.name}</span>
+        <span className="small muted">{r.ex.length} exercise{r.ex.length === 1 ? '' : 's'}{r.prog ? ' · ' + r.prog : ''}</span>
+      </button>
+      {open === r.id && <div style={{ padding: '0 2px 8px' }}>
+        {r.ex.map((e, i) => <div key={i} className="row between small" style={{ padding: '3px 0' }}>
+          <span>{exName(e.id)}</span><span className="muted">{detail(e)}</span></div>)}
+        {!r.ex.length && <div className="adm-empty">Empty routine.</div>}
+      </div>}
+    </div>) : <div className="adm-empty">No routines.</div>}
+    {(d.inbox || []).length > 0 && <>
+      <h4 className="sec">Programs sent to them</h4>
+      {d.inbox.map(a => <div key={a.id} style={{ padding: '8px 2px', borderBottom: '1px solid var(--sep)' }}>
+        <div className="row between"><span className="small" style={{ fontWeight: 600 }}>{a.fromName || 'Trainer'}</span>
+          <span className={STATUS[a.status] || 'adm-pill'}>{a.status}</span></div>
+        <div className="dim" style={{ fontSize: '.72rem' }}>{fmtDate(new Date(a.created).toISOString().slice(0, 10), true)} · {a.routines.join(', ') || 'no routines'}{a.note ? ' · “' + a.note + '”' : ''}</div>
+      </div>)}
+    </>}
   </>
 }
 
@@ -138,6 +197,7 @@ function UserDetail({ id, onChanged, close }) {
           : 'No password yet. A one-time code lets them set one — the way back in after losing their only passkey.'}</div>
       </>}
     </>}
+    <PlanSection d={d} />
     <h4 className="sec">Workout history</h4>
     {workouts.length ? <div className="list" style={{ gap: 0 }}>
       {workouts.slice(0, 60).map(w => <div key={w.id} className="row between" style={{ padding: '9px 2px', borderBottom: '1px solid var(--sep)' }}>

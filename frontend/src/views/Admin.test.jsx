@@ -83,6 +83,33 @@ describe('Admin user drill-down', () => {
   })
 })
 
+describe('Admin user drill-down: the plan', () => {
+  it('shows the week, a routine\'s exercises (own ones by name) and what the trainer sent', async () => {
+    mocks.answers['/api/admin/user'] = {
+      ...mocks.answers['/api/admin/user'], workouts: [],
+      plan: { weekStart: 1, week: { 1: ['r1'], 3: 'r1' }, dayPlan: {},
+        routines: [{ id: 'r1', name: 'Push', emoji: '💪', prog: 'linear', ex: [{ id: 'mine', sets: 3, reps: 8 }] }],
+        customEx: [{ id: 'mine', n: 'Odd Lift' }] },
+      trainer: { id: 't1', name: 'Coach Kim' }, isTrainer: false, clients: [],
+      inbox: [{ id: 'a1', fromName: 'Coach Kim', note: 'Try this', created: 1760000000000, status: 'pending', routines: ['Pull'] }]
+    }
+    const page = render(<Admin />)
+    await settle()
+    act(() => [...page.querySelectorAll('.item')].find(el => el.textContent.includes('Mallory')).click())
+    const sheet = render(mocks.sheets[0](() => {}))
+    await settle()
+    const text = sheet.textContent
+    expect(text).toContain('Monday')
+    expect(text).toContain('Push')
+    expect(text).toContain('trainer Coach Kim')
+    expect(text).toContain('pending')
+    expect(text).toContain('Pull')
+    act(() => [...sheet.querySelectorAll('button')].find(b => b.textContent.includes('Push')).click())
+    expect(sheet.textContent).toContain('Odd Lift')
+    expect(sheet.textContent).toContain('3×8')
+  })
+})
+
 // The users call failing, or answering without a list, used to leave "Loading…" up for good —
 // what a paired phone that had lost its pairing showed its admin, and all it showed.
 describe('Admin when the users cannot be loaded', () => {

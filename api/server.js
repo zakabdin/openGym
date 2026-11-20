@@ -2514,6 +2514,28 @@ const routes = {
       unit: S.unit || 'kg',
       lastSync: lastSyncOf(u, S),
       routines: records(S.routines).map(r => ({ id: r.id, name: r.name, emoji: r.emoji, count: records(r.ex).length })),
+      // Their plan, read-only: every routine with its exercises (scalar fields only — sets, reps,
+      // mode, rest… — so a hand-edited document can't smuggle a large blob into this answer), the
+      // weekly schedule, one-off day changes from today on, and the names of their own exercises.
+      plan: {
+        weekStart: Number.isInteger(S.weekStart) ? S.weekStart : 1,
+        week: S.week && typeof S.week === 'object' ? S.week : {},
+        dayPlan: Object.fromEntries(Object.entries(S.dayPlan && typeof S.dayPlan === 'object' ? S.dayPlan : {})
+          .filter(([d]) => d >= new Date().toISOString().slice(0, 10)).sort(([a], [b]) => (a < b ? -1 : 1)).slice(0, 30)),
+        routines: records(S.routines).map(r => ({
+          id: r.id, name: r.name, emoji: r.emoji, prog: r.prog,
+          ex: records(r.ex).map(e => Object.fromEntries(Object.entries(e).filter(([, v]) => ['number', 'boolean'].includes(typeof v) || (typeof v === 'string' && v.length <= 60))))
+        })),
+        customEx: records(S.customEx).map(c => ({ id: c.id, n: String(c.n || '').slice(0, 60) }))
+      },
+      // The trainer link both ways, and the trainer inbox (what was sent to them and what they did with it).
+      trainer: u.trainerId ? { id: u.trainerId, name: (await store.users.byId(u.trainerId))?.name || null } : null,
+      isTrainer: u.role === 'trainer',
+      clients: u.role === 'trainer' ? (await store.users.clientsOf(u.id)).map(c => ({ id: c.id, name: c.name })) : [],
+      inbox: (await readAssignments(u.id)).map(a => ({
+        id: a.id, fromName: a.fromName, note: a.note, created: a.created, status: a.status, resolved: a.resolved || null,
+        routines: Array.isArray(a.bundle?.routines) ? a.bundle.routines.map(r => r.name) : []
+      })),
       bodyweight: records(S.bodyweight),
       // records() already copied, so this reverse is ours: newest first for display. A workout's
       // photos and videos are the owner's own: the admin view gets no refs to them.

@@ -3812,6 +3812,39 @@ components:
               name: { type: string }
               emoji: { type: string }
               count: { type: integer, description: Number of exercises. }
+        plan:
+          type: object
+          description: >-
+            Their plan, read-only: the weekly schedule (`week`, weekday 0-6 → routine id or ids),
+            one-off changes from today on (`dayPlan`, by date), every routine with its exercises
+            (scalar fields only: sets, reps, mode, rest…) and the names of their own exercises.
+          properties:
+            weekStart: { type: integer }
+            week: { type: object }
+            dayPlan: { type: object }
+            routines: { type: array, items: { type: object } }
+            customEx: { type: array, items: { type: object, properties: { id: { type: string }, n: { type: string } } } }
+        trainer:
+          oneOf: [{ type: 'null' }, { type: object, properties: { id: { type: string }, name: { oneOf: [{ type: string }, { type: 'null' }] } } }]
+          description: Who trains them, if anyone.
+        isTrainer: { type: boolean }
+        clients:
+          type: array
+          description: Their active clients, when they are a trainer.
+          items: { type: object, properties: { id: { type: string }, name: { type: string } } }
+        inbox:
+          type: array
+          description: Programs a trainer sent them, newest first, and what they did with each.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              fromName: { type: string }
+              note: { type: string }
+              created: { type: number }
+              status: { type: string, enum: [pending, accepted, declined] }
+              resolved: { oneOf: [{ type: number }, { type: 'null' }] }
+              routines: { type: array, items: { type: string } }
         bodyweight:
           type: array
           items: { $ref: '#/components/schemas/BodyweightEntry' }

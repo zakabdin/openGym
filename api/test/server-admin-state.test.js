@@ -99,6 +99,23 @@ test('GET /api/admin/user opens a profile whose stored state predates the entry 
   assert.equal(h.stackFrames(), 0, `stack traces in the log:\n${h.log}`);
 });
 
+test('GET /api/admin/user returns their plan: week, routines with exercises, own exercise names', async t => {
+  const h = await startServer(t);
+  const blob = 'x'.repeat(500);
+  await h.plant({
+    unit: 'kg', weekStart: 1, week: { 1: ['r1'], 4: 'r1' },
+    routines: [{ id: 'r1', name: 'Push', prog: 'linear', ex: [null, { id: 'e1', sets: 3, reps: 8, why: blob, nested: { a: 1 } }] }],
+    customEx: [null, { id: 'e1', n: 'Odd Lift' }], workouts: [], bodyweight: []
+  });
+  const r = await h.get(`/api/admin/user?id=${VICTIM}`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.plan.week, { 1: ['r1'], 4: 'r1' });
+  assert.deepEqual(r.body.plan.routines[0].ex, [{ id: 'e1', sets: 3, reps: 8 }]);   // no long strings, no nested objects
+  assert.deepEqual(r.body.plan.customEx, [{ id: 'e1', n: 'Odd Lift' }]);
+  assert.deepEqual(r.body.inbox, []);
+  assert.equal(r.body.trainer, null);
+});
+
 test('GET /api/admin/user leaves a workout\'s photos and videos out', async t => {
   const h = await startServer(t);
   const ref = { kind: 'image', hash: 'a'.repeat(64), mime: 'image/webp', size: 10, width: 8, height: 6, at: 1 };
