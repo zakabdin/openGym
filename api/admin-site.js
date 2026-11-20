@@ -19,7 +19,14 @@
  * What the actions do (disable, delete) is the app's own — server.js hands them in — so the admin
  * site and the in-app dashboard cannot disagree about what "delete" removes. */
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import { createBackoff } from './rate-limit.js';
+
+// Built-in exercise id → name, so a plan reads as names. Missing file = ids are shown instead.
+let EX_NAMES = {};
+try { EX_NAMES = JSON.parse(fs.readFileSync(new URL('./exercise-names.json', import.meta.url), 'utf8')); } catch { /* ids only */ }
+const scalars = e => Object.fromEntries(Object.entries(e || {}).filter(([, v]) => ['number', 'boolean'].includes(typeof v) || (typeof v === 'string' && v.length <= 60)));
+const objs = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object' && !Array.isArray(x)) : []);
 
 const SESSION_MS = 12 * 3600 * 1000;
 const COOKIE = 'og_admin';
@@ -147,6 +154,29 @@ export function createAdminSite({ store, secret, username, password, secure, rea
         events: (await store.audit.page({ uid: id, limit: 30 })).rows, now: Date.now()
       });
     }
+    // A person's plan, read-only: weekly schedule, routines with exercises (named), what a trainer sent.
+    if (path === '/admin/api/plan' && req.method === 'GET') {
+      const id = wanted(url.searchParams.get('id'));
+      const user = id && await store.admin.user(id);
+      if (!user) return send(res, 404, { error: 'no such user' });
+      const S = (await store.state.get(id)) || {};
+      const custom = Object.fromEntries(objs(S.customEx).map(c => [c.id, String(c.n || '').slice(0, 60)]));
+      const name = i => EX_NAMES[i] || custom[i] || String(i || '');
+      const today = new Date().toISOString().slice(0, 10);
+      return send(res, 200, {
+        weekStart: Number.isInteger(S.weekStart) ? S.weekStart : 1,
+        week: S.week && typeof S.week === 'object' ? S.week : {},
+        dayPlan: Object.fromEntries(Object.entries(S.dayPlan && typeof S.dayPlan === 'object' ? S.dayPlan : {}).filter(([d]) => d >= today).sort(([a], [b]) => (a < b ? -1 : 1)).slice(0, 30)),
+        routines: objs(S.routines).map(r => ({ id: r.id, name: r.name, emoji: r.emoji, prog: r.prog,
+          ex: objs(r.ex).map(e => ({ ...scalars(e), name: name(e.id) })) })),
+        inbox: (await store.assignments.get(id)).map(a => ({ id: a.id, fromName: a.fromName, note: a.note, created: a.created, status: a.status,
+          routines: Array.isArray(a.bundle?.routines) ? a.bundle.routines.map(r => r.name) : [] })),
+        now: Date.now()
+      });
+    }
+    if (path === '/admin/api/bot-stats' && req.method === 'GET') {
+      return send(res, 200, { ...(await store.audit.botStats({ days: num(url.searchParams.get('days'), 7, 1, 90) })), now: Date.now() });
+    }
     if (path === '/admin/api/audit' && req.method === 'GET') {
       const q = url.searchParams;
       const limit = num(q.get('limit'), 50, 1, 200);
@@ -261,6 +291,33 @@ async function removeUser(u, done) {
   try { await api('user/delete', { id: u.id }); done(); } catch (e) { alert(e.message); }
 }
 
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const botName = ev => { const m = /^bot[.](cmd|btn)[.]([a-z_]+)$/.exec(ev); return m ? (m[1] === 'cmd' ? '/' + m[2] + ' (typed)' : m[2] + ' (button)') : ev.replace('bot.', ''); };
+function botCard(b) {
+  const w = (l, x) => el('tr', {}, el('td', {}, l), el('td', {}, x.users), el('td', {}, x.events));
+  return el('div', { class: 'card' }, el('h1', {}, 'Bot usage'),
+    table(['Window', 'People', 'Actions'], [w('24 hours', b.h24), w('7 days', b.d7), w('30 days', b.d30)]),
+    el('h1', { style: 'margin-top:18px' }, 'Most used, last ' + b.days + ' days'),
+    table(['What', 'Times', 'People'], b.top.map(t => el('tr', {}, el('td', {}, botName(t.ev)), el('td', {}, t.n), el('td', {}, t.users))), 'No bot activity yet.'));
+}
+function planCard(p) {
+  const byId = Object.fromEntries(p.routines.map(r => [r.id, r]));
+  const names = ids => [].concat(ids == null ? [] : ids).filter(Boolean).map(i => byId[i] && byId[i].name).filter(Boolean);
+  const order = [0, 1, 2, 3, 4, 5, 6].map(i => (p.weekStart + i) % 7);
+  const detail = e => [e.sets && e.reps ? e.sets + 'x' + e.reps : e.sets ? e.sets + ' sets' : e.reps ? e.reps + ' reps' : null, e.mode && e.mode !== 'reps' ? e.mode : null, e.dur ? e.dur + 's' : null, e.rest ? 'rest ' + e.rest + 's' : null].filter(Boolean).join(' · ');
+  const extra = Object.entries(p.dayPlan).map(([d, ids]) => d + ' → ' + (names(ids).join(' + ') || 'rest')).join(' · ');
+  return [
+    el('div', { class: 'card' }, el('h1', {}, 'Weekly plan'),
+      table(['Day', 'Routine'], order.map(wd => el('tr', {}, el('td', {}, DAYS[wd]), el('td', {}, names(p.week[wd]).join(' + ') || '—'))), 'No plan.'),
+      extra ? el('p', { class: 'mute' }, 'One-off changes: ' + extra) : null),
+    el('div', { class: 'card' }, el('h1', {}, 'Routines (' + p.routines.length + ')'),
+      p.routines.length ? p.routines.map(r => el('details', {}, el('summary', {}, (r.emoji ? r.emoji + ' ' : '') + (r.name || 'Untitled') + ' — ' + r.ex.length + ' exercises' + (r.prog ? ' · ' + r.prog : '')),
+        table(['Exercise', 'Target'], r.ex.map(e => el('tr', {}, el('td', {}, e.name), el('td', {}, detail(e))))))) : el('div', { class: 'empty' }, 'No routines.')),
+    p.inbox.length ? el('div', { class: 'card' }, el('h1', {}, 'Programs sent to them'),
+      table(['Date', 'From', 'Routines', 'Status', 'Note'], p.inbox.map(a => el('tr', {}, el('td', {}, when(a.created)), el('td', {}, a.fromName || '—'), el('td', {}, a.routines.join(', ') || '—'), el('td', {}, badge(a.status, a.status === 'declined' ? 'bad' : a.status === 'accepted' ? 'ok' : '')), el('td', { class: 'mute' }, a.note || ''))))) : null
+  ];
+}
+
 const pages = {
   async login() {
     const err = $('#err');
@@ -273,12 +330,14 @@ const pages = {
 
   async overview() {
     const d = await api('overview');
+    const bot = await api('bot-stats').catch(() => null);
     const stat = (n, label) => el('div', { class: 'stat' }, el('b', {}, n), el('span', {}, label));
     $('#app').replaceChildren(
       el('div', { class: 'grid' },
         stat(d.users, 'Users'), stat(d.trainers, 'Trainers'), stat(d.clients, 'Clients'), stat(d.activeWeek, 'Active, 7 days'),
         stat(d.newWeek, 'New, 7 days'), stat(d.workouts, 'Workouts logged'), stat(d.push, 'Push devices'), stat(d.disabled, 'Disabled'),
-        stat(d.events24h, 'Events, 24 h'), stat(d.failed24h, 'Failures, 24 h')),
+        stat(d.events24h, 'Events, 24 h'), stat(d.failed24h, 'Failures, 24 h'),
+        bot ? stat(bot.h24.users, 'Bot users, 24 h') : null, bot ? stat(bot.d7.users, 'Bot users, 7 days') : null),
       el('div', { class: 'card' }, el('h1', {}, 'Latest activity'), eventsTable(d.recent), el('p', { class: 'pager' }, el('a', { href: '/admin/activity' }, 'All activity →'))));
   },
 
@@ -311,6 +370,7 @@ const pages = {
   async user() {
     const id = decodeURIComponent(location.pathname.split('/').pop());
     const load = async () => {
+      const plan = await api('plan?id=' + encodeURIComponent(id)).catch(() => null);
       let d; try { d = await api('user?id=' + encodeURIComponent(id)); } catch { $('#app').replaceChildren(el('div', { class: 'card empty' }, 'No such user.')); return; }
       const u = d.user;
       const kv = (k, v) => [el('dt', {}, k), el('dd', {}, v)];
@@ -325,6 +385,7 @@ const pages = {
             el('button', { class: 'btn danger', onclick: () => removeUser(u, () => { location.href = '/admin/users'; }) }, 'Delete…'))),
         d.clients.length ? el('div', { class: 'card' }, el('h1', {}, 'Clients (' + d.clients.length + ')'),
           table(['Name', 'Workouts', 'Last workout', 'Last sync', 'Status'], d.clients.map(c => el('tr', {}, el('td', {}, userLink(c)), el('td', {}, c.workouts), el('td', {}, day(c.lastWorkout)), el('td', {}, ago(c.lastSync, d.now)), el('td', {}, status(c)))))) : null,
+        ...(plan ? planCard(plan) : []),
         el('div', { class: 'card' }, el('h1', {}, 'Recent workouts'),
           table(['Date', 'Workout', 'Exercises', 'Minutes', 'Volume'], d.workouts.map(w => el('tr', {}, el('td', {}, day(w.d)), el('td', {}, w.name || '—'), el('td', {}, w.exercises ?? '—'), el('td', {}, w.minutes ?? '—'), el('td', {}, w.vol ?? '—'))), 'No workouts yet.')),
         el('div', { class: 'card' }, el('h1', {}, 'Activity'), eventsTable(d.events), el('p', { class: 'pager' }, el('a', { href: '/admin/activity' }, 'All activity →')))].filter(Boolean));
@@ -335,9 +396,10 @@ const pages = {
   async activity() {
     let cat = ''; let before = null;
     const body = el('div'); const more = el('div', { class: 'pager' });
-    const filter = el('select', {}, [['', 'Everything'], ['fail', 'Failures'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['trainer', 'Trainer'], ['workout', 'Workouts']].map(([v, t]) => el('option', { value: v }, t)));
-    filter.addEventListener('change', () => { cat = filter.value; before = null; body.replaceChildren(); load(); });
-    $('#app').replaceChildren(el('div', { class: 'card' }, el('div', { class: 'bar' }, filter), body, more));
+    const filter = el('select', {}, [['', 'Everything'], ['fail', 'Failures'], ['auth', 'Sign-ins'], ['admin', 'Admin'], ['trainer', 'Trainer'], ['workout', 'Workouts'], ['bot', 'Bot']].map(([v, t]) => el('option', { value: v }, t)));
+    filter.addEventListener('change', () => { cat = filter.value; before = null; body.replaceChildren(); botBox.replaceChildren(); if (cat === 'bot') api('bot-stats').then(b => botBox.replaceChildren(botCard(b))).catch(() => {}); load(); });
+    const botBox = el('div');
+    $('#app').replaceChildren(botBox, el('div', { class: 'card' }, el('div', { class: 'bar' }, filter), body, more));
     async function load() {
       const d = await api('audit?' + new URLSearchParams({ cat, ...(before ? { before } : {}) }));
       const t = eventsTable(d.events, !!body.firstChild);

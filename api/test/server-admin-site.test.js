@@ -245,3 +245,29 @@ test('reset data also works for a profile that never synced a document', async t
   const s = await h.db.state('u2');
   assert.equal(s._rev, 1); assert.ok(s.resetAt > 0);
 });
+
+test('the user page can read a plan, and the bot filter and stats see bot rows', async t => {
+  const h = await start(t, {
+    users: [user('u1', 'Ana')],
+    states: { u1: { weekStart: 1, week: { 1: ['r1'] }, routines: [{ id: 'r1', name: 'Push', ex: [{ id: '0001', sets: 3, reps: 8, why: 'x'.repeat(300) }, { id: 'mine', sets: 2 }] }], customEx: [{ id: 'mine', n: 'Odd Lift' }], workouts: [], bodyweight: [] } }
+  });
+  const { cookie } = await h.login();
+  assert.equal((await h.req('GET', '/admin/api/plan?id=u1')).status, 401);
+  assert.equal((await h.req('GET', '/admin/api/plan?id=nobody', { cookie })).status, 404);
+  const p = (await h.req('GET', '/admin/api/plan?id=u1', { cookie })).json;
+  assert.deepEqual(p.week, { 1: ['r1'] });
+  assert.deepEqual(p.routines[0].ex.map(e => e.name), ['3/4 sit-up', 'Odd Lift']);   // built-in by id, own by its name
+  assert.equal(JSON.stringify(p).includes('xxxx'), false, 'long text is not passed along');
+  assert.deepEqual(p.inbox, []);
+
+  await h.db.store.audit.add({ ts: Date.now(), ev: 'bot.cmd.plan', uid: 'u1', name: 'Ana' });
+  await h.db.store.audit.add({ ts: Date.now(), ev: 'bot.btn.stats', uid: 'u1', name: 'Ana' });
+  const s = (await h.req('GET', '/admin/api/bot-stats', { cookie })).json;
+  assert.equal(s.h24.events, 2);
+  assert.equal(s.h24.users, 1);
+  assert.deepEqual(s.top.map(x => x.ev).sort(), ['bot.btn.stats', 'bot.cmd.plan']);
+  assert.equal((await h.req('GET', '/admin/api/audit?cat=bot', { cookie })).json.events.length, 2);
+  const page = await h.req('GET', '/admin/users/u1', { cookie });
+  assert.equal(page.status, 200);
+  assert.doesNotThrow(() => new Function(/<script nonce="[^"]+">([\s\S]*)<\/script>/.exec(page.text)[1]), 'the page script parses');
+});
